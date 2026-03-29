@@ -2,7 +2,7 @@
 
 use crate::{ENGINE, WM_VNKEY_UPDATE_ICON, VNKEY_INJECTED_TAG};
 
-use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, AtomicU64, Ordering};
 use vnkey_engine::charset::Charset;
 use windows::Win32::Foundation::*;
 use windows::Win32::UI::Input::KeyboardAndMouse::*;
@@ -17,6 +17,8 @@ static LAST_FOREGROUND: AtomicIsize = AtomicIsize::new(0);
 static LAST_FOCUS: AtomicIsize = AtomicIsize::new(0);
 /// Đặt sau Ctrl+Shift toggle để bỏ qua chu kỳ keyup tiếp theo
 static JUST_TOGGLED: AtomicBool = AtomicBool::new(false);
+/// Tick count cuối cùng hook nhận được phím (dùng để phát hiện hook bị gỡ)
+static HOOK_LAST_SEEN: AtomicU64 = AtomicU64::new(0);
 
 fn get_hook() -> HHOOK {
     HHOOK(HOOK_RAW.load(Ordering::Relaxed) as *mut _)
@@ -44,6 +46,27 @@ pub fn uninstall_hook() {
     }
 }
 
+/// Cài đặt lại hook. Gọi định kỳ từ timer để phòng trường hợp
+/// Windows gỡ hook do callback vượt quá thời gian cho phép
+/// (LowLevelHooksTimeout, mặc định ~300ms).
+/// Đây là cách phổ biến các bộ gõ (Unikey, GoTiengViet) dùng để đảm bảo ổn định.
+pub fn reinstall_hook() {
+    unsafe {
+        let old = get_hook();
+        if !old.0.is_null() {
+            let _ = UnhookWindowsHookEx(old);
+        }
+        match SetWindowsHookExW(WH_KEYBOARD_LL, Some(ll_keyboard_proc), None, 0) {
+            Ok(hook) => {
+                HOOK_RAW.store(hook.0 as isize, Ordering::Relaxed);
+            }
+            Err(_) => {
+                HOOK_RAW.store(0, Ordering::Relaxed);
+            }
+        }
+    }
+}
+
 /// Hàm trợ giúp gọi CallNextHookEx với handle hook đã lưu
 unsafe fn call_next(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     CallNextHookEx(get_hook(), code, wparam, lparam)
@@ -59,6 +82,9 @@ unsafe extern "system" fn ll_keyboard_proc(
     }
 
     let kb = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
+
+    // Cập nhật heartbeat: hook vẫn sống
+    HOOK_LAST_SEEN.store(kb.time as u64, Ordering::Relaxed);
 
     // Bỏ qua phím inject của chính mình (theo magic tag)
     if kb.dwExtraInfo == VNKEY_INJECTED_TAG {
@@ -225,7 +251,9 @@ unsafe extern "system" fn ll_keyboard_proc(
             return call_next(code, wparam, lparam);
         }
     } else {
-        return call_next(code, wparam, lparam);
+        // Mutex bận (GUI/config đang giữ) → vẫn gửi phím thô
+        // để tránh mất ký tự (vì luôn chặn phím gốc ở dưới).
+        crate::send::send_char(ascii);
     }
 
     LRESULT(1) // Luôn chặn phím gốc

@@ -161,6 +161,15 @@ fn main() {
     // Đăng ký phím tắt đã lưu (bật/tắt + chuyển mã)
     hotkey::register_hotkeys(hwnd);
 
+    // Timer cài đặt lại hook định kỳ (mỗi 5 giây).
+    // Phòng trường hợp Windows gỡ hook do callback vượt thời gian cho phép
+    // (LowLevelHooksTimeout). Đây là lỗi phổ biến trên trình duyệt nặng
+    // như Facebook, khiến bộ gõ "mất tiếng" cho đến khi bật/tắt lại.
+    const TIMER_HOOK_HEALTH: usize = 1;
+    unsafe {
+        SetTimer(hwnd, TIMER_HOOK_HEALTH, 5000, None);
+    }
+
     // Hiện cửa sổ cấu hình lần chạy đầu
     gui::open_config_window();
 
@@ -261,6 +270,11 @@ unsafe extern "system" fn wnd_proc(
         }
         WM_COMMAND => {
             tray::handle_menu_command(hwnd, wparam.0 as u16);
+            LRESULT(0)
+        }
+        WM_TIMER => {
+            // Cài đặt lại hook định kỳ để phòng hook bị Windows gỡ
+            hook::reinstall_hook();
             LRESULT(0)
         }
         WM_DESTROY => {
