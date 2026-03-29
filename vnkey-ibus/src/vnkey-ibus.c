@@ -740,6 +740,59 @@ static void vnk_ibus_engine_property_activate(IBusEngine *engine,
     register_properties(self);
 }
 
+/* Đọc surrounding text để khôi phục ngữ cảnh khi preedit rỗng.
+ * Ví dụ: đã commit "giá", xóa "iá", gõ tiếp → engine cần biết chữ 'g'. */
+static void try_surrounding_context(VnkIBusEngine *self) {
+    if (self->preedit_len > 0)
+        return;
+    if (!vnkey_engine_at_word_beginning(self->engine))
+        return;
+
+    IBusText *text = NULL;
+    guint cursor_pos = 0;
+    guint anchor_pos = 0;
+    ibus_engine_get_surrounding_text((IBusEngine *)self,
+                                     &text, &cursor_pos, &anchor_pos);
+    if (!text)
+        return;
+
+    const gchar *str = ibus_text_get_text(text);
+    if (!str || !str[0]) {
+        g_object_unref(text);
+        return;
+    }
+
+    /* Tìm vị trí byte tương ứng cursor_pos (đơn vị ký tự) */
+    size_t byte_offset = 0;
+    for (guint i = 0; i < cursor_pos && str[byte_offset]; i++) {
+        byte_offset += g_utf8_skip[(unsigned char)str[byte_offset]];
+    }
+
+    /* Quét ngược lấy tối đa 10 ký tự ASCII alpha liên tiếp */
+    size_t start = byte_offset;
+    int count = 0;
+    while (start > 0 && count < 10) {
+        unsigned char ch = (unsigned char)str[start - 1];
+        if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z')) {
+            start--;
+            count++;
+        } else {
+            break;
+        }
+    }
+
+    if (count > 0) {
+        char ctx[16];
+        size_t len = byte_offset - start;
+        if (len > sizeof(ctx) - 1) len = sizeof(ctx) - 1;
+        memcpy(ctx, str + start, len);
+        ctx[len] = '\0';
+        vnkey_engine_feed_context(self->engine, ctx);
+    }
+
+    g_object_unref(text);
+}
+
 static gboolean vnk_ibus_engine_process_key_event(IBusEngine *engine,
     guint keyval, guint keycode, guint state) {
     VnkIBusEngine *self = (VnkIBusEngine *)engine;
@@ -801,6 +854,9 @@ static gboolean vnk_ibus_engine_process_key_event(IBusEngine *engine,
 
     /* Phím ASCII in được â gửi tới vnkey engine */
     if (keyval >= IBUS_KEY_exclam && keyval <= IBUS_KEY_asciitilde) {
+        /* Nếu preedit rỗng, thử đọc surrounding text để khôi phục ngữ cảnh */
+        try_surrounding_context(self);
+
         uint8_t buf[256];
         size_t actual_len = 0;
         size_t backspaces = 0;

@@ -36,6 +36,11 @@ void vnkey_engine_reset(VnKeyEngine *engine);
 /* Đặt lại mềm: lưu trạng thái để backspace có thể khôi phục */
 void vnkey_engine_soft_reset(VnKeyEngine *engine);
 
+/* Nạp ngữ cảnh (surrounding text) vào engine để khôi phục trạng thái.
+ * Gọi khi preedit bắt đầu giữa từ đã commit (vd: sau backspace xóa phần từ).
+ * Trả 1 nếu thành công. */
+int vnkey_engine_feed_context(VnKeyEngine *engine, const char *text);
+
 /* Đặt kiểu gõ: 0=Telex, 1=SimpleTelex, 2=VNI, 3=VIQR, 4=MsVi */
 void vnkey_engine_set_input_method(VnKeyEngine *engine, int method);
 

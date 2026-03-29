@@ -182,6 +182,33 @@ impl Engine {
         self.current < 0
     }
 
+    /// Nạp ngữ cảnh trước (surrounding text) vào engine mà không tạo đầu ra.
+    /// Dùng để khôi phục trạng thái khi preedit bắt đầu giữa từ đã commit.
+    /// Trả true nếu nạp thành công (ít nhất 1 ký tự được xử lý).
+    pub fn feed_context(&mut self, text: &str) -> bool {
+        if text.is_empty() {
+            return false;
+        }
+        self.reset();
+        let mut fed = false;
+        for ch in text.chars() {
+            let code = ch as u32;
+            // Chỉ nạp ký tự ASCII in được
+            if code < 0x21 || code > 0x7E {
+                // Ký tự không phải ASCII → reset và bỏ qua
+                self.reset();
+                fed = false;
+                continue;
+            }
+            let _ = self.process(code);
+            fed = true;
+        }
+        // Reset output state nhưng giữ buffer state
+        self.backs = 0;
+        self.change_pos = self.current + 1;
+        fed
+    }
+
     /// Xử lý một lần gõ phím
     pub fn process(&mut self, key_code: u32) -> ProcessResult {
         self.has_saved_state = false; // Phím mới bất kỳ đều hủy trạng thái đã lưu
@@ -1503,8 +1530,37 @@ impl Engine {
             }
         }
 
-        // Không có nguyên âm để móc — coi 'w' là ký tự thường
-        self.process_append(ev)
+        // Không có nguyên âm để móc — tạo 'ư' (Telex chuẩn)
+        // Nếu ký tự trước là 'ư' do w trước đó tạo, hoàn tác thành 'w'
+        if self.current >= 0
+            && self.buf(self.current).vn_sym == VnLexiName::uh
+            && self.buf(self.current).form == WordForm::V
+        {
+            // ww → hoàn tác ư thành w
+            self.mark_change(self.current);
+            self.buffer[self.current as usize].form = WordForm::NonVn;
+            self.buffer[self.current as usize].vn_sym = VnLexiName::NonVnChar;
+            self.buffer[self.current as usize].key_code = b'w' as u32;
+            self.single_mode = false;
+            self.process_append(ev);
+            self.reverted = true;
+            return true;
+        }
+
+        // w → ư
+        self.current += 1;
+        let idx = self.current as usize;
+        self.buffer[idx].form = WordForm::V;
+        self.buffer[idx].vn_sym = VnLexiName::uh;
+        self.buffer[idx].caps = ev.key_code < 0x61; // uppercase check
+        self.buffer[idx].tone = 0;
+        self.buffer[idx].key_code = ev.key_code;
+        self.buffer[idx].v_offset = 0;
+        self.buffer[idx].c1_offset = -1;
+        self.buffer[idx].c2_offset = -1;
+        self.buffer[idx].vseq = lookup_vseq1(VnLexiName::uh);
+        self.mark_change(self.current);
+        true
     }
 
     fn process_esc_char(&mut self, ev: KeyEvent) -> bool {

@@ -544,6 +544,59 @@ void VnKeyState::commitPreedit(bool soft) {
         vnkey_engine_reset(vnkeyEngine_);
 }
 
+void VnKeyState::trySurroundingContext() {
+    /* Nếu engine đang ở đầu từ và preedit trống,
+     * thử đọc surrounding text để khôi phục ngữ cảnh phụ âm đứng trước.
+     * Giải quyết vấn đề: commit "giá", xóa "iá", gõ lại → engine cần biết 'g'. */
+    if (!vnkey_engine_at_word_beginning(vnkeyEngine_) || !preedit_.empty())
+        return;
+
+    if (!ic_->capabilityFlags().test(CapabilityFlag::SurroundingText))
+        return;
+
+    const auto &st = ic_->surroundingText();
+    const auto &text = st.text();
+    unsigned int cursor = st.cursor();
+    if (text.empty() || cursor == 0)
+        return;
+
+    /* Lùi từ vị trí con trỏ để tìm phần đầu từ (chỉ ASCII chữ cái) */
+    auto u32text = text;  /* Fcitx5 SurroundingText.text() trả std::string UTF-8 */
+    /* Chuyển sang duyệt byte — chỉ quan tâm ASCII trailing */
+    size_t bytePos = 0;
+    size_t charIdx = 0;
+    /* Tìm byte offset của cursor (cursor tính theo ký tự UTF-8) */
+    for (size_t i = 0; i < text.size() && charIdx < cursor; ) {
+        unsigned char c = static_cast<unsigned char>(text[i]);
+        if (c < 0x80) { i++; }
+        else if (c < 0xE0) { i += 2; }
+        else if (c < 0xF0) { i += 3; }
+        else { i += 4; }
+        charIdx++;
+        bytePos = i;
+    }
+
+    /* Lùi lại tìm ký tự ASCII chữ cái liền trước cursor */
+    size_t start = bytePos;
+    while (start > 0) {
+        unsigned char prev = static_cast<unsigned char>(text[start - 1]);
+        if (prev >= 0x80 || !std::isalpha(prev))
+            break;
+        start--;
+    }
+
+    if (start >= bytePos)
+        return; /* Không có chữ cái ASCII nào trước cursor */
+
+    std::string ctx = text.substr(start, bytePos - start);
+
+    /* Giới hạn ngữ cảnh: chỉ nạp tối đa 10 ký tự cuối từ */
+    if (ctx.size() > 10)
+        ctx = ctx.substr(ctx.size() - 10);
+
+    vnkey_engine_feed_context(vnkeyEngine_, ctx.c_str());
+}
+
 void VnKeyState::keyEvent(KeyEvent &keyEvent) {
     /* Đồng bộ cài đặt từ menu (kiểu gõ, tùy chọn) */
     syncSettings();
@@ -636,7 +689,9 @@ void VnKeyState::keyEvent(KeyEvent &keyEvent) {
 
     /* Phím ASCII in được â gửi tới vnkey engine */
     auto sym = key.sym();
-    if (sym >= FcitxKey_exclam && sym <= FcitxKey_asciitilde) {
+    if (sym >= FcitxKey_exclam && sym <= FcitxKey_asciitilde) {        /* Nếu preedit rỗng, thử đọc surrounding text để khôi phục ngữ cảnh
+         * (vd: đã commit 'g', xóa phần sau, gõ tiếp → engine cần biết 'g') */
+        trySurroundingContext();
         uint32_t keyCode = static_cast<uint32_t>(sym);
         uint8_t buf[256];
         size_t actualLen = 0;

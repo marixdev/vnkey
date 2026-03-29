@@ -87,6 +87,7 @@ public:
 private:
     void commitPreedit(bool soft = false);
     void syncSettings();
+    void trySurroundingContext();
 
     VnKeyEngine *engine_;
     InputContext *ic_;

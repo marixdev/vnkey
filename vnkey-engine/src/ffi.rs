@@ -278,6 +278,29 @@ pub unsafe extern "C" fn vnkey_engine_soft_reset(engine: *mut VnKeyEngine) {
     }
 }
 
+/// Nạp ngữ cảnh (surrounding text) vào engine để khôi phục trạng thái.
+/// `text` là chuỗi UTF-8 kết thúc null chứa phần cuối từ đã commit
+/// (vd: "g" nếu từ "giá" bị xoá còn "g").
+/// Trả 1 nếu nạp thành công, 0 nếu thất bại.
+/// # Safety
+/// `engine` phải là con trỏ hợp lệ từ `vnkey_engine_new`.
+/// `text` phải là chuỗi C hợp lệ kết thúc null.
+#[no_mangle]
+pub unsafe extern "C" fn vnkey_engine_feed_context(
+    engine: *mut VnKeyEngine,
+    text: *const c_char,
+) -> i32 {
+    if engine.is_null() || text.is_null() {
+        return 0;
+    }
+    let engine = &mut *engine;
+    let c_str = CStr::from_ptr(text);
+    match c_str.to_str() {
+        Ok(s) => if engine.feed_context(s) { 1 } else { 0 },
+        Err(_) => 0,
+    }
+}
+
 /// Đặt kiểu gõ cho instance engine cụ thể.
 /// 0 = Telex, 1 = SimpleTelex, 2 = VNI, 3 = VIQR, 4 = MsVi
 /// # Safety
