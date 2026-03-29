@@ -239,6 +239,18 @@ cargo test
 
 Toàn bộ dự án được phát hành theo giấy phép **GPL-3.0-or-later**.
 
+## Privacy Policy
+
+This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it.
+
+## Code Signing Policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
+- Committers and reviewers: [Members](https://github.com/orgs/marixdev/people)
+- Approvers: [Owners](https://github.com/orgs/marixdev/people?query=role%3Aowner)
+- Privacy policy: see [Privacy Policy](#privacy-policy) above
+
 ## Lời cảm ơn
 
 Dự án lấy cảm hứng từ [Unikey](https://www.unikey.org/) của Phạm Kim Long và các bộ gõ tiếng Việt khác.
