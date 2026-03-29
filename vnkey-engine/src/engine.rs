@@ -1520,21 +1520,14 @@ impl Engine {
             return self.process_append(ev);
         }
 
-        // Chỉ thử móc khi có nguyên âm để sửa (u→ư, o→ơ, a→ă)
-        if self.current >= 0 && self.buf(self.current).v_offset >= 0 {
-            let mut hook_ev = ev.clone();
-            hook_ev.ev_type = KeyEvType::HookAll;
-            let ret = self.process_hook(hook_ev);
-            if ret {
-                return ret;
-            }
-        }
-
-        // Không có nguyên âm để móc — tạo 'ư' (Telex chuẩn)
-        // Nếu ký tự trước là 'ư' do w trước đó tạo, hoàn tác thành 'w'
+        // Kiểm tra ww → hoàn tác ư thành ww TRƯỚC khi thử hook.
+        // Chỉ áp dụng cho ư tạo bởi phím 'w' đứng đơn (không phải hook u→ư trong từ).
+        // Nếu để process_hook chạy trước, nó sẽ "bỏ móc" uh→u rồi append w → ra "uw" thay vì "ww".
         if self.current >= 0
             && self.buf(self.current).vn_sym == VnLexiName::uh
             && self.buf(self.current).form == WordForm::V
+            && (self.buf(self.current).key_code == b'w' as u32
+                || self.buf(self.current).key_code == b'W' as u32)
         {
             // ww → hoàn tác ư thành w
             self.mark_change(self.current);
@@ -1547,6 +1540,17 @@ impl Engine {
             return true;
         }
 
+        // Thử móc khi có nguyên âm để sửa (u→ư, o→ơ, a→ă)
+        if self.current >= 0 && self.buf(self.current).v_offset >= 0 {
+            let mut hook_ev = ev.clone();
+            hook_ev.ev_type = KeyEvType::HookAll;
+            let ret = self.process_hook(hook_ev);
+            if ret {
+                return ret;
+            }
+        }
+
+        // Không có nguyên âm để móc — tạo 'ư' (Telex chuẩn)
         // w → ư
         self.current += 1;
         let idx = self.current as usize;
