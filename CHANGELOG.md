@@ -29,6 +29,15 @@
 - Thêm `flake.nix` hỗ trợ NixOS (Fcitx5 & IBus)
 - Cập nhật README hướng dẫn cài đặt NixOS chi tiết
 
+### vnkey-macos (MỚI)
+- Phiên bản macOS đầu tiên — sử dụng Input Method Kit (IMKit)
+- Hỗ trợ macOS 11.0+ (Big Sur trở lên), cả Intel và Apple Silicon
+- Preedit với gạch chân, commit tại ranh giới từ
+- Menu bar: chuyển Việt/Anh, chọn kiểu gõ, mở cài đặt
+- Cửa sổ Preferences (kiểu gõ, kiểm tra chính tả, bỏ dấu tự do, kiểu mới)
+- Cài đặt lưu qua NSUserDefaults
+- Build script hỗ trợ universal binary (lipo)
+
 ---
 
 ## 1.0.0 — 2026-03-29

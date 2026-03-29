@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>VnKey</string>
+
+    <key>CFBundleDisplayName</key>
+    <string>VnKey - Bộ gõ tiếng Việt</string>
+
+    <key>CFBundleIdentifier</key>
+    <string>dev.marix.inputmethod.VnKey</string>
+
+    <key>CFBundleVersion</key>
+    <string>1.0.1</string>
+
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.1</string>
+
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+
+    <key>CFBundleSignature</key>
+    <string>????</string>
+
+    <key>CFBundleExecutable</key>
+    <string>VnKey</string>
+
+    <key>CFBundleIconFile</key>
+    <string>VnKey</string>
+
+    <key>LSBackgroundOnly</key>
+    <true/>
+
+    <key>LSUIElement</key>
+    <true/>
+
+    <!-- Input Method Kit configuration -->
+    <key>InputMethodConnectionName</key>
+    <string>VnKey_Connection</string>
+
+    <key>InputMethodServerControllerClass</key>
+    <string>VnKeyInputController</string>
+
+    <key>InputMethodServerDelegateClass</key>
+    <string>VnKeyAppDelegate</string>
+
+    <key>tsInputMethodCharacterRepertoireKey</key>
+    <array>
+        <string>Latn</string>
+        <string>Vitn</string>
+    </array>
+
+    <key>tsInputMethodIconFileKey</key>
+    <string>VnKey</string>
+
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2026 marixdev. GPL-3.0-or-later.</string>
+</dict>
+</plist>

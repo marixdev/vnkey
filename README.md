@@ -2,7 +2,7 @@
 
 [![License: GPL v3](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 
-VnKey là bộ gõ tiếng Việt mã nguồn mở, engine viết bằng **Rust**, hỗ trợ **Windows**, **Linux (Fcitx5)** và **Linux (IBus)**.
+VnKey là bộ gõ tiếng Việt mã nguồn mở, engine viết bằng **Rust**, hỗ trợ **Windows**, **macOS**, **Linux (Fcitx5)** và **Linux (IBus)**.
 
 **Website:** [https://vnkey.app](https://vnkey.app)
 
@@ -11,6 +11,7 @@ VnKey là bộ gõ tiếng Việt mã nguồn mở, engine viết bằng **Rust*
 ```
 vnkey-engine/    (Rust)    Core engine + C FFI (staticlib)
 vnkey-windows/   (Rust)    Ứng dụng Windows — Win32 + Direct2D
+vnkey-macos/     (Obj-C)   Input method cho macOS — Input Method Kit
 vnkey-fcitx5/    (C++)     Fcitx5 addon cho Linux
 vnkey-ibus/      (C)       IBus engine cho Linux
 ```
@@ -36,6 +37,26 @@ Hoặc build từ source:
 cd vnkey-windows
 cargo build --release
 # → target\release\vnkey.exe
+```
+
+### macOS
+
+Yêu cầu: macOS 11.0+, Xcode Command Line Tools, Rust toolchain, CMake.
+
+```bash
+cd vnkey-macos
+./build.sh install
+```
+
+Sau khi cài:
+1. Vào **System Settings → Keyboard → Input Sources → Edit…**
+2. Nhấn **+** → tìm "Vietnamese" → chọn **VnKey**
+3. Tick "Show Input menu in menu bar"
+
+Hoặc build universal binary (Intel + Apple Silicon):
+```bash
+./build.sh universal
+# → build/VnKey.app
 ```
 
 ### Linux — Fcitx5
@@ -149,6 +170,14 @@ cpack -G DEB    # hoặc cpack -G RPM
 | Mở menu | Click phải icon tray |
 | Mở cấu hình | Double-click icon tray |
 
+### macOS
+
+| Thao tác | Cách thực hiện |
+|----------|---------------|
+| Chuyển Việt/Anh | Click icon menu bar → chọn VnKey hoặc dùng phím tắt input source |
+| Tùy chỉnh | Click icon menu bar → VnKey → "Tùy chỉnh..." |
+| Chọn kiểu gõ | Click icon menu bar → VnKey → chọn Telex/VNI/... |
+
 ### Linux (Fcitx5 / IBus)
 
 | Thao tác | Cách thực hiện |
@@ -182,6 +211,15 @@ vnkey-windows/             Ứng dụng Windows
     blacklist.rs           Loại trừ ứng dụng
     hotkey.rs              Gán phím tắt
     ui.rs                  Direct2D helpers
+
+vnkey-macos/               Input method macOS
+  src/
+    main.m                 Entry point, IMKServer
+    VnKeyInputController.m IMKInputController — xử lý phím
+    VnKeyAppDelegate.m     App delegate, preferences window
+    VnKeyPreferences.m     UI cài đặt
+  resources/Info.plist     Bundle config (IMKit)
+  build.sh                 Build script
 
 vnkey-fcitx5/              Fcitx5 addon (Linux)
   src/vnkey-fcitx5.cpp     Engine implementation
