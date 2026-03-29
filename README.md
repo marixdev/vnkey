@@ -46,7 +46,11 @@ sudo dpkg -i vnkey-fcitx5_1.0.0_amd64.deb
 
 # Fedora/RHEL/Rocky
 sudo dnf install ./vnkey-fcitx5-1.0.0-1.x86_64.rpm
+
+# Arch Linux
+sudo pacman -U vnkey-fcitx5-1.0.0-1-x86_64.pkg.tar.zst
 ```
+*(Đối với NixOS: có sẵn file `.tar.gz` chứa addon Fcitx5 dịch sẵn để bạn tự fetch vào derivation).*
 
 ### Linux — IBus
 
@@ -56,7 +60,11 @@ sudo dpkg -i vnkey-ibus_1.0.0_amd64.deb
 
 # Fedora/RHEL/Rocky
 sudo dnf install ./vnkey-ibus-1.0.0-1.x86_64.rpm
+
+# Arch Linux
+sudo pacman -U vnkey-ibus-1.0.0-1-x86_64.pkg.tar.zst
 ```
+*(Đối với NixOS: có sẵn file `.tar.gz` chứa engine IBus dịch sẵn để bạn tự fetch vào derivation).*
 
 ### Build từ source (Linux)
 
