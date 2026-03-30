@@ -73,6 +73,9 @@ struct KeyBufEntry {
 #[derive(Debug, Clone)]
 pub struct ProcessResult {
     pub backspaces: usize,
+    /// Số backspaces theo byte cho bảng mã đa byte (VNI-Win, VNI-Mac, BKHCM2, VietWare-X).
+    /// Mỗi ký tự tiếng Việt = 2 byte, ASCII = 1 byte.
+    pub backspaces_bytes: usize,
     pub output: Vec<u8>,
     pub out_type: OutputType,
     pub processed: bool,
@@ -226,13 +229,7 @@ impl Engine {
 
         // Snapshot toàn bộ output hiện tại TRƯỚC khi dispatch modify buffer
         // Dùng cho get_backspaces_for_multi_byte
-        {
-            let old_change_pos = self.change_pos;
-            self.change_pos = 0; // tạm thời cho write_output xuất toàn bộ
-            self.prev_output = self.write_output();
-            self.prev_change_start = (self.current + 1) as usize;
-            self.change_pos = old_change_pos; // phục hồi
-        }
+        self.snapshot_output();
 
         let ev = self.input.key_code_to_event(key_code);
 
@@ -285,6 +282,7 @@ impl Engine {
                 let output = self.write_output();
                 return ProcessResult {
                     backspaces: self.backs,
+                    backspaces_bytes: self.get_backspaces_for_multi_byte(),
                     output,
                     out_type: OutputType::Char,
                     processed: true,
@@ -292,6 +290,7 @@ impl Engine {
             }
             return ProcessResult {
                 backspaces: 0,
+                backspaces_bytes: 0,
                 output: Vec::new(),
                 out_type: OutputType::Char,
                 processed: false,
@@ -301,6 +300,7 @@ impl Engine {
         let output = self.write_output();
         ProcessResult {
             backspaces: self.backs,
+            backspaces_bytes: self.get_backspaces_for_multi_byte(),
             output,
             out_type: OutputType::Char,
             processed: true,
@@ -314,6 +314,7 @@ impl Engine {
             if self.restore_saved_state() {
                 return ProcessResult {
                     backspaces: 0,
+                    backspaces_bytes: 0,
                     output: Vec::new(),
                     out_type: OutputType::Char,
                     processed: false,
@@ -321,6 +322,7 @@ impl Engine {
             }
             return ProcessResult {
                 backspaces: 0,
+                backspaces_bytes: 0,
                 output: Vec::new(),
                 out_type: OutputType::Char,
                 processed: false,
@@ -329,6 +331,7 @@ impl Engine {
 
         self.backs = 0;
         self.change_pos = self.current + 1;
+        self.snapshot_output();
         self.mark_change(self.current);
 
         let form = self.buf(self.current).form;
@@ -346,6 +349,7 @@ impl Engine {
             self.synch_key_stroke_buffer();
             return ProcessResult {
                 backspaces: self.backs,
+                backspaces_bytes: self.get_backspaces_for_multi_byte(),
                 output: Vec::new(),
                 out_type: OutputType::Char,
                 processed: self.backs > 1,
@@ -368,6 +372,7 @@ impl Engine {
             self.synch_key_stroke_buffer();
             return ProcessResult {
                 backspaces: self.backs,
+                backspaces_bytes: self.get_backspaces_for_multi_byte(),
                 output: Vec::new(),
                 out_type: OutputType::Char,
                 processed: self.backs > 1,
@@ -384,6 +389,7 @@ impl Engine {
         let output = self.write_output();
         ProcessResult {
             backspaces: self.backs,
+            backspaces_bytes: self.get_backspaces_for_multi_byte(),
             output,
             out_type: OutputType::Char,
             processed: true,
@@ -453,6 +459,16 @@ impl Engine {
         // Với UTF-8, mỗi ký tự = 1 bước cho backspace
         // Các bảng mã đa byte cần tính khác (xem get_backspaces_for_multi_byte)
         (last - first + 1) as usize
+    }
+
+    /// Snapshot toàn bộ output hiện tại vào prev_output/prev_change_start.
+    /// Dùng trước khi dispatch modify buffer để tính backspaces cho bảng mã đa byte.
+    fn snapshot_output(&mut self) {
+        let old_change_pos = self.change_pos;
+        self.change_pos = 0; // tạm thời cho write_output xuất toàn bộ
+        self.prev_output = self.write_output();
+        self.prev_change_start = (self.current + 1) as usize;
+        self.change_pos = old_change_pos; // phục hồi
     }
 
     /// Tính số backspaces cho bảng mã đa byte (VNI-Win, VNI-Mac, BKHCM2, VietWare-X).

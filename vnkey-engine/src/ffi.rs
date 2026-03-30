@@ -56,11 +56,15 @@ pub extern "C" fn vnkey_process(
     out_len: usize,
     actual_len: *mut usize,
     backspaces: *mut usize,
+    backspaces_bytes: *mut usize,
 ) -> i32 {
     with_engine(|engine| {
         let result = engine.process(key_code);
         if !backspaces.is_null() {
             unsafe { *backspaces = result.backspaces; }
+        }
+        if !backspaces_bytes.is_null() {
+            unsafe { *backspaces_bytes = result.backspaces_bytes; }
         }
         if !actual_len.is_null() {
             let copy_len = result.output.len().min(out_len);
@@ -82,11 +86,15 @@ pub extern "C" fn vnkey_backspace(
     out_len: usize,
     actual_len: *mut usize,
     backspaces: *mut usize,
+    backspaces_bytes: *mut usize,
 ) -> i32 {
     with_engine(|engine| {
         let result = engine.process_backspace();
         if !backspaces.is_null() {
             unsafe { *backspaces = result.backspaces; }
+        }
+        if !backspaces_bytes.is_null() {
+            unsafe { *backspaces_bytes = result.backspaces_bytes; }
         }
         if !actual_len.is_null() {
             let copy_len = result.output.len().min(out_len);
@@ -209,6 +217,7 @@ pub unsafe extern "C" fn vnkey_engine_process(
     out_len: usize,
     actual_len: *mut usize,
     backspaces: *mut usize,
+    backspaces_bytes: *mut usize,
 ) -> i32 {
     if engine.is_null() {
         return 0;
@@ -217,6 +226,9 @@ pub unsafe extern "C" fn vnkey_engine_process(
     let result = engine.process(key_code);
     if !backspaces.is_null() {
         *backspaces = result.backspaces;
+    }
+    if !backspaces_bytes.is_null() {
+        *backspaces_bytes = result.backspaces_bytes;
     }
     if !actual_len.is_null() {
         let copy_len = result.output.len().min(out_len);
@@ -238,6 +250,7 @@ pub unsafe extern "C" fn vnkey_engine_backspace(
     out_len: usize,
     actual_len: *mut usize,
     backspaces: *mut usize,
+    backspaces_bytes: *mut usize,
 ) -> i32 {
     if engine.is_null() {
         return 0;
@@ -246,6 +259,9 @@ pub unsafe extern "C" fn vnkey_engine_backspace(
     let result = engine.process_backspace();
     if !backspaces.is_null() {
         *backspaces = result.backspaces;
+    }
+    if !backspaces_bytes.is_null() {
+        *backspaces_bytes = result.backspaces_bytes;
     }
     if !actual_len.is_null() {
         let copy_len = result.output.len().min(out_len);
