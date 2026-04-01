@@ -2,10 +2,17 @@
 
 use crate::{ENGINE, WM_VNKEY_TRAY};
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use windows::core::*;
 use windows::Win32::Foundation::*;
 use windows::Win32::UI::Shell::*;
 use windows::Win32::UI::WindowsAndMessaging::*;
+
+/// Cài đặt "Chạy với quyền Admin" — lưu vào config.json
+static RUN_AS_ADMIN: AtomicBool = AtomicBool::new(false);
+
+pub fn set_run_as_admin(v: bool) { RUN_AS_ADMIN.store(v, Ordering::Relaxed); }
+pub fn get_run_as_admin() -> bool { RUN_AS_ADMIN.load(Ordering::Relaxed) }
 
 // Mã tài nguyên icon (từ resources.rc)
 const IDI_ICON_V: u16 = 101;
@@ -40,7 +47,31 @@ const IDM_CONVERTER: u16 = 401;
 const IDM_BLACKLIST: u16 = 402;
 const IDM_INFO: u16 = 403;
 const IDM_HOTKEY: u16 = 404;
+const IDM_RUNAS: u16 = 500;
 const IDM_EXIT: u16 = 900;
+
+/// Kiểm tra xem tiến trình hiện tại có đang chạy với quyền Admin không.
+pub fn is_elevated() -> bool {
+    use windows::Win32::Security::*;
+    unsafe {
+        let mut token = HANDLE::default();
+        let proc = windows::Win32::System::Threading::GetCurrentProcess();
+        if windows::Win32::System::Threading::OpenProcessToken(proc, TOKEN_QUERY, &mut token).is_err() {
+            return false;
+        }
+        let mut elevation = TOKEN_ELEVATION::default();
+        let mut len = 0u32;
+        let ok = GetTokenInformation(
+            token,
+            TokenElevation,
+            Some(&mut elevation as *mut _ as *mut _),
+            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
+            &mut len,
+        );
+        let _ = windows::Win32::Foundation::CloseHandle(token);
+        ok.is_ok() && elevation.TokenIsElevated != 0
+    }
+}
 
 pub fn create_tray_icon(hwnd: HWND, viet_mode: bool) {
     let icon_id = if viet_mode { IDI_ICON_V } else { IDI_ICON_E };
@@ -254,6 +285,14 @@ fn show_context_menu(hwnd: HWND) {
         // Phím tắt
         AppendMenuW(menu, MF_STRING, IDM_HOTKEY as usize, w!("⌨ Gán phím...")).ok();
 
+        // Chạy với quyền Admin (toggle)
+        {
+            let checked = get_run_as_admin();
+            let flags = MF_STRING | if checked { MF_CHECKED } else { MF_UNCHECKED };
+            AppendMenuW(menu, flags, IDM_RUNAS as usize,
+                w!("🛡 Chạy với quyền Admin")).ok();
+        }
+
         AppendMenuW(menu, MF_SEPARATOR, 0, None).ok();
 
         // Thoát
@@ -268,6 +307,36 @@ fn show_context_menu(hwnd: HWND) {
         PostMessageW(hwnd, WM_NULL, WPARAM(0), LPARAM(0)).ok();
 
         DestroyMenu(menu).ok();
+    }
+}
+
+/// Lấy đường dẫn exe hiện tại.
+fn get_exe_path() -> Option<Vec<u16>> {
+    let mut buf = [0u16; 260];
+    let len = unsafe { windows::Win32::System::LibraryLoader::GetModuleFileNameW(None, &mut buf) };
+    if len == 0 { return None; }
+    Some(buf.to_vec())
+}
+
+/// Khởi chạy lại VnKey với quyền Admin qua UAC prompt.
+fn relaunch_as_admin() {
+    if let Some(buf) = get_exe_path() {
+        unsafe {
+            ShellExecuteW(HWND::default(), w!("runas"), PCWSTR(buf.as_ptr()),
+                PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL);
+            PostQuitMessage(0);
+        }
+    }
+}
+
+/// Khởi chạy lại VnKey bình thường (không quyền Admin).
+fn relaunch_normal() {
+    if let Some(buf) = get_exe_path() {
+        unsafe {
+            ShellExecuteW(HWND::default(), w!("open"), PCWSTR(buf.as_ptr()),
+                PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL);
+            PostQuitMessage(0);
+        }
     }
 }
 
@@ -349,6 +418,18 @@ pub fn handle_menu_command(hwnd: HWND, id: u16) {
         IDM_HOTKEY => {
             drop(guard);
             crate::hotkey::open_hotkey_window();
+            return;
+        }
+        IDM_RUNAS => {
+            drop(guard);
+            let new_val = !get_run_as_admin();
+            set_run_as_admin(new_val);
+            crate::config::save_now();
+            if new_val && !is_elevated() {
+                relaunch_as_admin();
+            } else if !new_val && is_elevated() {
+                relaunch_normal();
+            }
             return;
         }
         IDM_EXIT => unsafe {

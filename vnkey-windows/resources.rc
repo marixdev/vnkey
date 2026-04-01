@@ -4,3 +4,7 @@
 101 ICON "v.ico"
 // English mode icon
 102 ICON "e.ico"
+
+// UAC manifest: yêu cầu chạy với quyền Administrator
+// Keyboard hook cần quyền cao để hoạt động ổn định với các app elevated (VMware, v.v.)
+1 24 "vnkey.manifest"

@@ -47,16 +47,24 @@ public:
 
     int inputMethod() const { return inputMethod_; }
     int outputCharset() const { return outputCharset_; }
+    unsigned settingsGen() const { return settingsGen_; }
     bool spellCheck() const { return spellCheck_; }
     bool freeMarking() const { return freeMarking_; }
     bool modernStyle() const { return modernStyle_; }
 
 private:
     void setupMenu();
-    void updateLabel();
+    void updateIMAction(InputContext *ic);
+    void updateCSAction(InputContext *ic);
+    void updateSpellAction(InputContext *ic);
+    void updateFreeAction(InputContext *ic);
+    void updateModernAction(InputContext *ic);
+    void updateClipLabels();
+    void updateUI(InputContext *ic);
     void convertClipboard(bool toUnicode);
     void loadConfig();
     void saveConfig();
+    void syncActiveIC(InputContext *menuIC = nullptr);
 
     Instance *instance_;
     FactoryFor<VnKeyState> factory_;
@@ -67,11 +75,22 @@ private:
     bool spellCheck_ = true;
     bool freeMarking_ = true;
     bool modernStyle_ = true;
+    unsigned settingsGen_ = 0;
 
-    /* Menu khay */
-    SimpleAction statusAction_;
-    Menu menu_;
-    std::vector<std::unique_ptr<SimpleAction>> menuItems_;
+    /* Menu khay — giống fcitx5-unikey: mỗi nhóm một Action + Menu riêng */
+    std::unique_ptr<SimpleAction> imAction_;
+    std::unique_ptr<Menu> imMenu_;
+    std::vector<std::unique_ptr<SimpleAction>> imSubActions_;
+
+    std::unique_ptr<SimpleAction> csAction_;
+    std::unique_ptr<Menu> csMenu_;
+    std::vector<std::unique_ptr<SimpleAction>> csSubActions_;
+
+    std::unique_ptr<SimpleAction> spellAction_;
+    std::unique_ptr<SimpleAction> freeAction_;
+    std::unique_ptr<SimpleAction> modernAction_;
+    std::unique_ptr<SimpleAction> clipToUniAction_;
+    std::unique_ptr<SimpleAction> clipFromUniAction_;
 };
 
 class VnKeyState : public InputContextProperty {
@@ -83,10 +102,11 @@ public:
     void activate();
     void deactivate();
     void reset();
+    void syncSettings();
 
 private:
     void commitPreedit(bool soft = false);
-    void syncSettings();
+    void directCommit(const char *utf8, size_t len);
     void trySurroundingContext();
 
     VnKeyEngine *engine_;
@@ -95,6 +115,8 @@ private:
     bool vietMode_ = true;
     std::string preedit_;
     int lastIM_ = -1;
+    int lastCS_ = -1;
+    unsigned lastSettingsGen_ = 0;
 };
 
 class VnKeyEngineFactory : public AddonFactory {

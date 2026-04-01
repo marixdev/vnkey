@@ -8,6 +8,7 @@ pub mod engine;
 pub mod charset;
 pub mod macro_table;
 pub mod ffi;
+pub mod app_charset;
 
 pub use engine::{Engine, OutputType};
 pub use input::InputMethod;

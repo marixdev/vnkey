@@ -1,6 +1,6 @@
 [package]
 name = "vnkey-windows"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 description = "VnKey Vietnamese Input Method for Windows"
 license = "GPL-3.0-or-later"
@@ -13,6 +13,8 @@ path = "src/main.rs"
 vnkey-engine = { path = "../vnkey-engine" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tao = { version = "0.35.0", features = ["rwh_06"] }
+wry = "0.55.0"
 
 [dependencies.windows]
 version = "0.58"
@@ -25,6 +27,8 @@ features = [
     "Win32_UI_Controls",
     "Win32_System_LibraryLoader",
     "Win32_System_Threading",
+    "Win32_System_Console",
+    "Win32_Storage_FileSystem",
     "Win32_System_DataExchange",
     "Win32_System_Memory",
     "Win32_Graphics_Gdi",

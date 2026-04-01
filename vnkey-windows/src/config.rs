@@ -56,6 +56,11 @@ pub fn load() {
         }
     }
 
+    // Cài đặt chạy quyền Admin
+    if let Some(v) = get_bool(&vals, "run_as_admin") {
+        crate::tray::set_run_as_admin(v);
+    }
+
     // Áp dụng vào ConvSettings
     if let Ok(mut conv) = crate::converter::CONV_SETTINGS.lock() {
         if let Some(v) = get_i32(&vals, "conv_from") {
@@ -94,6 +99,43 @@ pub fn load() {
         }
     }
 
+    // Áp dụng custom hotkeys (mới) hoặc cs_hotkeys (cũ)
+    for (k, v) in &vals {
+        if k == "custom_hotkeys" || k == "cs_hotkeys" {
+            use crate::hotkey::{CustomHotkey, HkKind};
+            if let Ok(mut hk) = crate::hotkey::HOTKEY_SETTINGS.lock() {
+                hk.custom.clear();
+                for chunk in v.split('{').skip(1) {
+                    if let Some(end) = chunk.find('}') {
+                        let inner = &chunk[..end];
+                        let mut kind_str = "";
+                        let mut id = 0i32;
+                        let mut vk = 0u32;
+                        let mut mods = 0u32;
+                        for part in inner.split(',') {
+                            let part = part.trim();
+                            if let Some(colon) = part.find(':') {
+                                let key = part[..colon].trim().trim_matches('"');
+                                let val_s = part[colon+1..].trim().trim_matches('"');
+                                match key {
+                                    "k" => { kind_str = if val_s == "im" { "im" } else { "cs" }; }
+                                    "cs" | "id" => { id = val_s.parse().unwrap_or(0); }
+                                    "vk" => { vk = val_s.parse().unwrap_or(0); }
+                                    "mods" => { mods = val_s.parse().unwrap_or(0); }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        let kind = if kind_str == "im" { HkKind::Im } else { HkKind::Cs };
+                        // Old format (cs_hotkeys) only had entries with vk!=0; new format keeps all
+                        hk.custom.push(CustomHotkey { kind, id, vk, mods });
+                    }
+                }
+            }
+            break; // prefer first match (custom_hotkeys over cs_hotkeys)
+        }
+    }
+
     // Áp dụng danh sách đen
     if let Ok(mut list) = crate::blacklist::BLACKLIST.lock() {
         list.clear();
@@ -106,6 +148,13 @@ pub fn load() {
                     }
                 }
             }
+        }
+    }
+
+    // Áp dụng bảng mã theo ứng dụng
+    for (k, v) in &vals {
+        if k == "app_charsets" {
+            crate::app_charset::from_json(v);
         }
     }
 }
@@ -133,6 +182,11 @@ pub fn save() {
     });
 }
 
+/// Lưu đồng bộ ngay lập tức (không debounce). Dùng trước khi relaunch.
+pub fn save_now() {
+    do_save();
+}
+
 fn do_save() {
     let path = match config_path() {
         Some(p) => p,
@@ -157,6 +211,9 @@ fn do_save() {
         }
     };
 
+    // Đọc cài đặt chạy quyền Admin
+    let run_as_admin = crate::tray::get_run_as_admin();
+
     // Đọc cài đặt chuyển mã
     let (conv_from, conv_to) = {
         match crate::converter::CONV_SETTINGS.lock() {
@@ -173,6 +230,23 @@ fn do_save() {
         }
     };
 
+    // Đọc custom hotkeys
+    let custom_hk_json = {
+        match crate::hotkey::HOTKEY_SETTINGS.lock() {
+            Ok(hk) => {
+                use crate::hotkey::HkKind;
+                let items: Vec<String> = hk.custom.iter()
+                    .map(|ch| {
+                        let kind = match ch.kind { HkKind::Cs => "cs", HkKind::Im => "im" };
+                        format!("{{\"k\":\"{kind}\",\"id\":{},\"vk\":{},\"mods\":{}}}", ch.id, ch.vk, ch.mods)
+                    })
+                    .collect();
+                format!("[{}]", items.join(","))
+            }
+            Err(_) => "[]".to_string(),
+        }
+    };
+
     // Đọc danh sách đen
     let blacklist_json = {
         match crate::blacklist::BLACKLIST.lock() {
@@ -183,7 +257,8 @@ fn do_save() {
             Err(_) => "[]".to_string(),
         }
     };
-
+    // Đọc bảng mã theo ứng dụng
+    let app_charsets_json = crate::app_charset::to_json();
     let json = format!(
         "{{\n\
          \x20 \"input_method\": {im},\n\
@@ -192,13 +267,16 @@ fn do_save() {
          \x20 \"spell_check\": {spell},\n\
          \x20 \"free_marking\": {free},\n\
          \x20 \"modern_style\": {modern},\n\
+         \x20 \"run_as_admin\": {run_as_admin},\n\
          \x20 \"conv_from\": {conv_from},\n\
          \x20 \"conv_to\": {conv_to},\n\
          \x20 \"toggle_vk\": {toggle_vk},\n\
          \x20 \"toggle_mods\": {toggle_mods},\n\
          \x20 \"hk_conv_vk\": {hk_conv_vk},\n\
          \x20 \"hk_conv_mods\": {hk_conv_mods},\n\
-         \x20 \"blacklist\": {blacklist_json}\n\
+         \x20 \"custom_hotkeys\": {custom_hk_json},\n\
+         \x20 \"blacklist\": {blacklist_json},\n\
+         \x20 \"app_charsets\": {app_charsets_json}\n\
          }}\n"
     );
 

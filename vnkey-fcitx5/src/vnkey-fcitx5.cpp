@@ -20,49 +20,6 @@
 
 namespace fcitx {
 
-// ==================== Dữ liệu menu ====================
-
-enum ItemKind { KIND_IM, KIND_CS, KIND_OPT_SPELL, KIND_OPT_FREE, KIND_OPT_MODERN,
-                KIND_CLIP_TO_UNI, KIND_CLIP_FROM_UNI };
-
-struct MenuItem {
-    ItemKind kind;
-    int      value;   /* ID kiểu gõ hoặc ID bảng mã, bỏ qua cho tùy chọn */
-    const char *label;
-};
-
-static const MenuItem MENU_ITEMS[] = {
-    /* ---- Kiểu gõ ---- */
-    {KIND_IM, 0, "IM: Telex"},
-    {KIND_IM, 1, "IM: Simple Telex"},
-    {KIND_IM, 2, "IM: VNI"},
-    {KIND_IM, 3, "IM: VIQR"},
-    /* ---- Bảng mã ---- */
-    {KIND_CS, 1,  "CS: Unicode (UTF-8)"},
-    {KIND_CS, 40, "CS: VNI Windows"},
-    {KIND_CS, 20, "CS: TCVN3 (ABC)"},
-    {KIND_CS, 10, "CS: VIQR"},
-    {KIND_CS, 4,  "CS: Unicode Composite"},
-    {KIND_CS, 5,  "CS: Vietnamese CP 1258"},
-    {KIND_CS, 2,  "CS: NCR Decimal"},
-    {KIND_CS, 3,  "CS: NCR Hex"},
-    {KIND_CS, 22, "CS: VISCII"},
-    {KIND_CS, 21, "CS: VPS"},
-    {KIND_CS, 41, "CS: BK HCM 2"},
-    {KIND_CS, 23, "CS: BK HCM 1"},
-    {KIND_CS, 42, "CS: Vietware X"},
-    {KIND_CS, 24, "CS: Vietware F"},
-    {KIND_CS, 6,  "CS: Unicode C String"},
-    /* ---- Tùy chọn ---- */
-    {KIND_OPT_SPELL,  0, "Spell check"},
-    {KIND_OPT_FREE,   0, "Free tone marking"},
-    {KIND_OPT_MODERN, 0, "Modern style (oÃ , uÃ½)"},
-    /* ---- Chuyển mã clipboard ---- */
-    {KIND_CLIP_TO_UNI,   0, "[CS] \xe2\x86\x92 Unicode (clipboard)"},
-    {KIND_CLIP_FROM_UNI, 0, "Unicode \xe2\x86\x92 [CS] (clipboard)"},
-};
-static constexpr size_t MENU_COUNT = sizeof(MENU_ITEMS) / sizeof(MENU_ITEMS[0]);
-
 // ==================== Lưu trữ cấu hình ====================
 
 static std::string configDir() {
@@ -113,6 +70,25 @@ static bool jsonGetBool(const std::string &json, const char *key, bool def) {
     return def;
 }
 
+/* Trích xuất JSON object con: "key": { ... } */
+static std::string jsonGetObject(const std::string &json, const char *key) {
+    std::string needle = std::string("\"") + key + "\"";
+    auto pos = json.find(needle);
+    if (pos == std::string::npos) return {};
+    pos = json.find('{', pos + needle.size());
+    if (pos == std::string::npos) return {};
+    int depth = 1;
+    size_t start = pos;
+    pos++;
+    while (pos < json.size() && depth > 0) {
+        if (json[pos] == '{') depth++;
+        else if (json[pos] == '}') depth--;
+        pos++;
+    }
+    if (depth != 0) return {};
+    return json.substr(start, pos - start);
+}
+
 // ==================== VnKeyEngine (cấp addon) ====================
 
 VnKeyEngine::VnKeyEngine(Instance *instance)
@@ -142,12 +118,22 @@ void VnKeyEngine::loadConfig() {
     spellCheck_    = jsonGetBool(json, "spell_check", true);
     freeMarking_   = jsonGetBool(json, "free_marking", true);
     modernStyle_   = jsonGetBool(json, "modern_style", true);
+
+    /* Nạp app_charsets */
+    auto acJson = jsonGetObject(json, "app_charsets");
+    if (!acJson.empty()) {
+        vnkey_app_charset_from_json(acJson.c_str());
+    }
 }
 
 void VnKeyEngine::saveConfig() {
     auto dir = configDir();
     if (dir.empty()) return;
     std::filesystem::create_directories(dir);
+
+    char *acJson = vnkey_app_charset_to_json();
+    std::string acStr = acJson ? acJson : "{}";
+    if (acJson) vnkey_app_charset_free_string(acJson);
 
     auto path = configPath();
     std::ofstream f(path);
@@ -157,7 +143,8 @@ void VnKeyEngine::saveConfig() {
       << "  \"output_charset\": " << outputCharset_ << ",\n"
       << "  \"spell_check\": " << (spellCheck_ ? "true" : "false") << ",\n"
       << "  \"free_marking\": " << (freeMarking_ ? "true" : "false") << ",\n"
-      << "  \"modern_style\": " << (modernStyle_ ? "true" : "false") << "\n"
+      << "  \"modern_style\": " << (modernStyle_ ? "true" : "false") << ",\n"
+      << "  \"app_charsets\": " << acStr << "\n"
       << "}\n";
 }
 
@@ -168,103 +155,270 @@ std::vector<InputMethodEntry> VnKeyEngine::listInputMethods() {
     return result;
 }
 
+/* IM names (matching MENU_ITEMS KIND_IM order) */
+struct IMDef { int value; const char *label; };
+static const IMDef IM_DEFS[] = {
+    {0, "Telex"}, {1, "Simple Telex"}, {2, "VNI"}, {3, "VIQR"},
+};
+static constexpr size_t IM_COUNT = sizeof(IM_DEFS) / sizeof(IM_DEFS[0]);
+
+/* CS names (matching MENU_ITEMS KIND_CS order) */
+struct CSDef { int value; const char *label; };
+static const CSDef CS_DEFS[] = {
+    {1,  "Unicode (UTF-8)"},
+    {40, "VNI Windows"},
+    {20, "TCVN3 (ABC)"},
+    {10, "VIQR"},
+    {4,  "Unicode Composite"},
+    {5,  "Vietnamese CP 1258"},
+    {2,  "NCR Decimal"},
+    {3,  "NCR Hex"},
+    {22, "VISCII"},
+    {21, "VPS"},
+    {41, "BK HCM 2"},
+    {23, "BK HCM 1"},
+    {42, "Vietware X"},
+    {24, "Vietware F"},
+    {6,  "Unicode C String"},
+};
+static constexpr size_t CS_COUNT = sizeof(CS_DEFS) / sizeof(CS_DEFS[0]);
+
+/* Label with visual bullet for radio items — workaround for GNOME Shell
+ * AppIndicator extension not requesting toggle-type/toggle-state in GetLayout.
+ * The "label" property is always returned regardless of property filter. */
+static std::string radioLabel(const char *name, bool selected) {
+    if (selected)
+        return std::string("\xe2\x97\x8f ") + name;  /* ● name */
+    return std::string("    ") + name;                  /*   name */
+}
+
 void VnKeyEngine::setupMenu() {
-    statusAction_.setShortText("VnKey [Telex]");
-    statusAction_.setMenu(&menu_);
-    instance_->userInterfaceManager().registerAction("vnkey-status",
-                                                     &statusAction_);
+    auto &uiManager = instance_->userInterfaceManager();
 
-    for (size_t i = 0; i < MENU_COUNT; i++) {
+    /* ---- Input Method action + submenu ---- */
+    imAction_ = std::make_unique<SimpleAction>();
+    imAction_->setShortText("Input Method");
+    uiManager.registerAction("vnkey-im", imAction_.get());
+    imMenu_ = std::make_unique<Menu>();
+    imAction_->setMenu(imMenu_.get());
+
+    for (size_t i = 0; i < IM_COUNT; i++) {
         auto act = std::make_unique<SimpleAction>();
-        const auto &item = MENU_ITEMS[i];
-        act->setShortText(item.label);
-
-        bool isClip = (item.kind == KIND_CLIP_TO_UNI ||
-                       item.kind == KIND_CLIP_FROM_UNI);
-        act->setCheckable(!isClip);
-
-        /* Đặt trạng thái checked ban đầu */
-        switch (item.kind) {
-        case KIND_IM:    act->setChecked(item.value == inputMethod_); break;
-        case KIND_CS:    act->setChecked(item.value == outputCharset_); break;
-        case KIND_OPT_SPELL:  act->setChecked(spellCheck_); break;
-        case KIND_OPT_FREE:   act->setChecked(freeMarking_); break;
-        case KIND_OPT_MODERN: act->setChecked(modernStyle_); break;
-        default: break;
-        }
-
-        size_t idx = i;
+        bool sel = (IM_DEFS[i].value == inputMethod_);
+        act->setShortText(radioLabel(IM_DEFS[i].label, sel));
+        act->setCheckable(true);
+        act->setChecked(sel);
+        int val = IM_DEFS[i].value;
         act->connect<SimpleAction::Activated>(
-            [this, idx](InputContext *) {
-                const auto &it = MENU_ITEMS[idx];
-                switch (it.kind) {
-                case KIND_IM:    inputMethod_ = it.value; break;
-                case KIND_CS:    outputCharset_ = it.value; break;
-                case KIND_OPT_SPELL:  spellCheck_ = !spellCheck_; break;
-                case KIND_OPT_FREE:   freeMarking_ = !freeMarking_; break;
-                case KIND_OPT_MODERN: modernStyle_ = !modernStyle_; break;
-                case KIND_CLIP_TO_UNI:   convertClipboard(true); break;
-                case KIND_CLIP_FROM_UNI: convertClipboard(false); break;
-                }
-                updateLabel();
-                if (it.kind != KIND_CLIP_TO_UNI && it.kind != KIND_CLIP_FROM_UNI)
-                    saveConfig();
+            [this, val](InputContext *ic) {
+                inputMethod_ = val;
+                updateIMAction(ic);
+                settingsGen_++;
+                saveConfig();
+                syncActiveIC(ic);
             });
+        uiManager.registerAction("vnkey-im-" + std::to_string(i), act.get());
+        imMenu_->addAction(act.get());
+        imSubActions_.push_back(std::move(act));
+    }
 
-        instance_->userInterfaceManager().registerAction(
-            "vnkey-item-" + std::to_string(i), act.get());
-        menu_.addAction(act.get());
-        menuItems_.push_back(std::move(act));
+    /* ---- Output Charset action + submenu ---- */
+    csAction_ = std::make_unique<SimpleAction>();
+    csAction_->setShortText("Character Set");
+    uiManager.registerAction("vnkey-cs", csAction_.get());
+    csMenu_ = std::make_unique<Menu>();
+    csAction_->setMenu(csMenu_.get());
+
+    for (size_t i = 0; i < CS_COUNT; i++) {
+        auto act = std::make_unique<SimpleAction>();
+        bool sel = (CS_DEFS[i].value == outputCharset_);
+        act->setShortText(radioLabel(CS_DEFS[i].label, sel));
+        act->setCheckable(true);
+        act->setChecked(sel);
+        int val = CS_DEFS[i].value;
+        act->connect<SimpleAction::Activated>(
+            [this, val](InputContext *ic) {
+                outputCharset_ = val;
+                updateCSAction(ic);
+                updateClipLabels();
+                settingsGen_++;
+                saveConfig();
+                syncActiveIC(ic);
+            });
+        uiManager.registerAction("vnkey-cs-" + std::to_string(i), act.get());
+        csMenu_->addAction(act.get());
+        csSubActions_.push_back(std::move(act));
+    }
+
+    /* ---- Toggle: Spell check ---- */
+    spellAction_ = std::make_unique<SimpleAction>();
+    spellAction_->setCheckable(true);
+    spellAction_->setChecked(spellCheck_);
+    spellAction_->setShortText(spellCheck_ ? "Spell check (ON)"
+                                           : "Spell check (OFF)");
+    spellAction_->connect<SimpleAction::Activated>(
+        [this](InputContext *ic) {
+            spellCheck_ = !spellCheck_;
+            updateSpellAction(ic);
+            settingsGen_++;
+            saveConfig();
+            syncActiveIC(ic);
+        });
+    uiManager.registerAction("vnkey-spell", spellAction_.get());
+
+    /* ---- Toggle: Free tone marking ---- */
+    freeAction_ = std::make_unique<SimpleAction>();
+    freeAction_->setCheckable(true);
+    freeAction_->setChecked(freeMarking_);
+    freeAction_->setShortText(freeMarking_ ? "Free tone marking (ON)"
+                                           : "Free tone marking (OFF)");
+    freeAction_->connect<SimpleAction::Activated>(
+        [this](InputContext *ic) {
+            freeMarking_ = !freeMarking_;
+            updateFreeAction(ic);
+            settingsGen_++;
+            saveConfig();
+            syncActiveIC(ic);
+        });
+    uiManager.registerAction("vnkey-free", freeAction_.get());
+
+    /* ---- Toggle: Modern style ---- */
+    modernAction_ = std::make_unique<SimpleAction>();
+    modernAction_->setCheckable(true);
+    modernAction_->setChecked(modernStyle_);
+    modernAction_->setShortText(modernStyle_
+        ? "Modern style \xe2\x80\x93 o\xc3\xa0, u\xc3\xbd (ON)"
+        : "Modern style \xe2\x80\x93 o\xc3\xa0, u\xc3\xbd (OFF)");
+    modernAction_->connect<SimpleAction::Activated>(
+        [this](InputContext *ic) {
+            modernStyle_ = !modernStyle_;
+            updateModernAction(ic);
+            settingsGen_++;
+            saveConfig();
+            syncActiveIC(ic);
+        });
+    uiManager.registerAction("vnkey-modern", modernAction_.get());
+
+    /* ---- Clipboard conversion (non-checkable) ---- */
+    clipToUniAction_ = std::make_unique<SimpleAction>();
+    clipToUniAction_->setShortText("[CS] \xe2\x86\x92 Unicode (clipboard)");
+    clipToUniAction_->connect<SimpleAction::Activated>(
+        [this](InputContext *) { convertClipboard(true); });
+    uiManager.registerAction("vnkey-clip-to-uni", clipToUniAction_.get());
+
+    clipFromUniAction_ = std::make_unique<SimpleAction>();
+    clipFromUniAction_->setShortText("Unicode \xe2\x86\x92 [CS] (clipboard)");
+    clipFromUniAction_->connect<SimpleAction::Activated>(
+        [this](InputContext *) { convertClipboard(false); });
+    uiManager.registerAction("vnkey-clip-from-uni", clipFromUniAction_.get());
+
+    updateClipLabels();
+}
+
+void VnKeyEngine::syncActiveIC(InputContext *menuIC) {
+    auto *ic = menuIC ? menuIC : instance_->mostRecentInputContext();
+    fprintf(stderr, "[vnkey] syncActiveIC: menuIC=%p resolved=%p\n", (void*)menuIC, (void*)ic);
+    if (!ic) return;
+    auto *state = ic->propertyFor(&factory_);
+    if (state) {
+        fprintf(stderr, "[vnkey] syncActiveIC: calling syncSettings on state=%p\n", (void*)state);
+        state->syncSettings();
     }
 }
 
-void VnKeyEngine::updateLabel() {
-    /* Xác định tên kiểu gõ và bảng mã hiện tại */
+void VnKeyEngine::updateIMAction(InputContext *ic) {
+    for (size_t i = 0; i < imSubActions_.size(); i++) {
+        bool sel = (IM_DEFS[i].value == inputMethod_);
+        imSubActions_[i]->setShortText(radioLabel(IM_DEFS[i].label, sel));
+        imSubActions_[i]->setChecked(sel);
+        imSubActions_[i]->update(ic);
+    }
+    /* Find current IM name for longText */
     const char *imName = "Telex";
+    for (size_t i = 0; i < IM_COUNT; i++) {
+        if (IM_DEFS[i].value == inputMethod_) {
+            imName = IM_DEFS[i].label;
+            break;
+        }
+    }
+    imAction_->setLongText(imName);
+    imAction_->update(ic);
+}
+
+void VnKeyEngine::updateCSAction(InputContext *ic) {
+    for (size_t i = 0; i < csSubActions_.size(); i++) {
+        bool sel = (CS_DEFS[i].value == outputCharset_);
+        csSubActions_[i]->setShortText(radioLabel(CS_DEFS[i].label, sel));
+        csSubActions_[i]->setChecked(sel);
+        csSubActions_[i]->update(ic);
+    }
     const char *csName = "Unicode (UTF-8)";
-    for (size_t i = 0; i < MENU_COUNT; i++) {
-        if (MENU_ITEMS[i].kind == KIND_CS &&
-            MENU_ITEMS[i].value == outputCharset_) {
-            csName = MENU_ITEMS[i].label + 4; /* bỏ "CS: " */
+    for (size_t i = 0; i < CS_COUNT; i++) {
+        if (CS_DEFS[i].value == outputCharset_) {
+            csName = CS_DEFS[i].label;
+            break;
         }
     }
-    for (size_t i = 0; i < MENU_COUNT; i++) {
-        if (MENU_ITEMS[i].kind == KIND_IM) {
-            bool checked = (MENU_ITEMS[i].value == inputMethod_);
-            menuItems_[i]->setChecked(checked);
-            if (checked) imName = MENU_ITEMS[i].label + 4; /* bỏ "IM: " */
-        } else if (MENU_ITEMS[i].kind == KIND_CS) {
-            menuItems_[i]->setChecked(MENU_ITEMS[i].value == outputCharset_);
-        } else if (MENU_ITEMS[i].kind == KIND_OPT_SPELL) {
-            menuItems_[i]->setChecked(spellCheck_);
-        } else if (MENU_ITEMS[i].kind == KIND_OPT_FREE) {
-            menuItems_[i]->setChecked(freeMarking_);
-        } else if (MENU_ITEMS[i].kind == KIND_OPT_MODERN) {
-            menuItems_[i]->setChecked(modernStyle_);
-        } else if (MENU_ITEMS[i].kind == KIND_CLIP_TO_UNI) {
-            std::string lbl = std::string(csName) +
-                " \xe2\x86\x92 Unicode (clipboard)";
-            menuItems_[i]->setShortText(lbl);
-        } else if (MENU_ITEMS[i].kind == KIND_CLIP_FROM_UNI) {
-            std::string lbl = "Unicode \xe2\x86\x92 " +
-                std::string(csName) + " (clipboard)";
-            menuItems_[i]->setShortText(lbl);
+    csAction_->setLongText(csName);
+    csAction_->update(ic);
+}
+
+void VnKeyEngine::updateSpellAction(InputContext *ic) {
+    spellAction_->setChecked(spellCheck_);
+    spellAction_->setShortText(spellCheck_ ? "Spell check (ON)"
+                                           : "Spell check (OFF)");
+    spellAction_->update(ic);
+}
+
+void VnKeyEngine::updateFreeAction(InputContext *ic) {
+    freeAction_->setChecked(freeMarking_);
+    freeAction_->setShortText(freeMarking_ ? "Free tone marking (ON)"
+                                           : "Free tone marking (OFF)");
+    freeAction_->update(ic);
+}
+
+void VnKeyEngine::updateModernAction(InputContext *ic) {
+    modernAction_->setChecked(modernStyle_);
+    modernAction_->setShortText(modernStyle_
+        ? "Modern style \xe2\x80\x93 o\xc3\xa0, u\xc3\xbd (ON)"
+        : "Modern style \xe2\x80\x93 o\xc3\xa0, u\xc3\xbd (OFF)");
+    modernAction_->update(ic);
+}
+
+void VnKeyEngine::updateClipLabels() {
+    const char *csName = "Unicode (UTF-8)";
+    for (size_t i = 0; i < CS_COUNT; i++) {
+        if (CS_DEFS[i].value == outputCharset_) {
+            csName = CS_DEFS[i].label;
+            break;
         }
     }
+    clipToUniAction_->setShortText(
+        std::string(csName) + " \xe2\x86\x92 Unicode (clipboard)");
+    clipFromUniAction_->setShortText(
+        "Unicode \xe2\x86\x92 " + std::string(csName) + " (clipboard)");
+}
 
-    std::string label = std::string("VnKey [") + imName + "]";
-    statusAction_.setShortText(label);
-
-    auto *ic = instance_->mostRecentInputContext();
-    if (ic) {
-        statusAction_.update(ic);
-    }
+void VnKeyEngine::updateUI(InputContext *ic) {
+    updateIMAction(ic);
+    updateCSAction(ic);
+    updateSpellAction(ic);
+    updateFreeAction(ic);
+    updateModernAction(ic);
 }
 
 void VnKeyEngine::activate(const InputMethodEntry & /*entry*/,
                            InputContextEvent &event) {
     auto *ic = event.inputContext();
-    ic->statusArea().addAction(StatusGroup::InputMethod, &statusAction_);
+    auto &sa = ic->statusArea();
+    sa.addAction(StatusGroup::InputMethod, imAction_.get());
+    sa.addAction(StatusGroup::InputMethod, csAction_.get());
+    sa.addAction(StatusGroup::InputMethod, spellAction_.get());
+    sa.addAction(StatusGroup::InputMethod, freeAction_.get());
+    sa.addAction(StatusGroup::InputMethod, modernAction_.get());
+    sa.addAction(StatusGroup::InputMethod, clipToUniAction_.get());
+    sa.addAction(StatusGroup::InputMethod, clipFromUniAction_.get());
+    updateUI(ic);
     auto *state = ic->propertyFor(&factory_);
     state->activate();
 }
@@ -300,8 +454,14 @@ VnKeyState::~VnKeyState() {
 }
 
 void VnKeyState::syncSettings() {
+    unsigned gen = engine_->settingsGen();
     int currentIM = engine_->inputMethod();
-    if (currentIM != lastIM_) {
+    int currentCS = engine_->outputCharset();
+    bool changed = (gen != lastSettingsGen_);
+
+    if (currentIM != lastIM_ || changed) {
+        fprintf(stderr, "[vnkey] syncSettings APPLY: im %d->%d cs %d->%d gen %u->%u\n",
+                lastIM_, currentIM, lastCS_, currentCS, lastSettingsGen_, gen);
         if (lastIM_ != -1) {
             commitPreedit();
         }
@@ -309,6 +469,8 @@ void VnKeyState::syncSettings() {
         vnkey_engine_reset(vnkeyEngine_);
         lastIM_ = currentIM;
     }
+    lastCS_ = currentCS;
+    lastSettingsGen_ = gen;
     vnkey_engine_set_options(vnkeyEngine_,
         engine_->freeMarking() ? 1 : 0,
         engine_->modernStyle() ? 1 : 0,
@@ -322,9 +484,24 @@ void VnKeyState::activate() {
     syncSettings();
     vnkey_engine_reset(vnkeyEngine_);
     preedit_.clear();
+    fprintf(stderr, "[vnkey] activate: vietMode=1 engine=%p ic=%p\n",
+            (void*)vnkeyEngine_, (void*)ic_);
+
+    /* Cập nhật charset override theo app đang focus */
+    auto prog = ic_->program();
+    if (!prog.empty()) {
+        /* Lấy basename và chuyển lowercase */
+        auto pos = prog.rfind('/');
+        std::string name = (pos != std::string::npos) ? prog.substr(pos + 1) : prog;
+        for (auto &c : name) c = std::tolower(static_cast<unsigned char>(c));
+        vnkey_app_charset_update(name.c_str());
+    } else {
+        vnkey_app_charset_update(nullptr);
+    }
 }
 
 void VnKeyState::deactivate() {
+    fprintf(stderr, "[vnkey] deactivate: ic=%p\n", (void*)ic_);
     commitPreedit();
     vnkey_engine_reset(vnkeyEngine_);
     preedit_.clear();
@@ -504,11 +681,11 @@ void VnKeyEngine::convertClipboard(bool toUnicode) {
 void VnKeyState::commitPreedit(bool soft) {
     if (!preedit_.empty()) {
         int charset = engine_->outputCharset();
+        int app_cs = vnkey_app_charset_get_current();
+        if (app_cs >= 0) charset = app_cs;
         if (charset == 1) {
-            /* UTF-8: commit trực tiếp */
             ic_->commitString(preedit_);
         } else {
-            /* Chuyển sang bảng mã đích */
             uint8_t buf[4096];
             size_t actualLen = 0;
             int ret = vnkey_charset_from_utf8(
@@ -517,31 +694,50 @@ void VnKeyState::commitPreedit(bool soft) {
                 buf, sizeof(buf), &actualLen);
             if (ret == 0 && actualLen > 0) {
                 if (isUtf8Charset(charset)) {
-                    /* Đầu ra đã là UTF-8/ASCII hợp lệ */
                     ic_->commitString(
                         std::string(reinterpret_cast<const char *>(buf),
                                     actualLen));
                 } else {
-                    /* Bảng mã cũ: nâng byte thô lên UTF-8
-                     * (dùng với font tiếng Việt cũ) */
                     ic_->commitString(bytesToUtf8(buf, actualLen));
                 }
             } else {
-                /* Dự phòng: dùng UTF-8 */
                 ic_->commitString(preedit_);
             }
         }
         preedit_.clear();
-        if (ic_->capabilityFlags().test(CapabilityFlag::Preedit)) {
-            ic_->inputPanel().reset();
-            ic_->updatePreedit();
-            ic_->updateUserInterface(UserInterfaceComponent::InputPanel);
-        }
     }
     if (soft)
         vnkey_engine_soft_reset(vnkeyEngine_);
     else
         vnkey_engine_reset(vnkeyEngine_);
+}
+
+/* Commit văn bản UTF-8 trực tiếp (chế độ không preedit) */
+void VnKeyState::directCommit(const char *utf8, size_t len) {
+    int charset = engine_->outputCharset();
+    int app_cs = vnkey_app_charset_get_current();
+    fprintf(stderr, "[vnkey] directCommit: cs=%d app_cs=%d len=%zu\n", charset, app_cs, len);
+    if (app_cs >= 0) charset = app_cs;
+    std::string s(utf8, len);
+    if (charset == 1) {
+        ic_->commitString(s);
+    } else {
+        uint8_t buf[4096];
+        size_t actualLen = 0;
+        int ret = vnkey_charset_from_utf8(
+            reinterpret_cast<const uint8_t *>(utf8), len,
+            charset, buf, sizeof(buf), &actualLen);
+        if (ret == 0 && actualLen > 0) {
+            if (isUtf8Charset(charset)) {
+                ic_->commitString(
+                    std::string(reinterpret_cast<const char *>(buf), actualLen));
+            } else {
+                ic_->commitString(bytesToUtf8(buf, actualLen));
+            }
+        } else {
+            ic_->commitString(s);
+        }
+    }
 }
 
 void VnKeyState::trySurroundingContext() {
@@ -636,113 +832,79 @@ void VnKeyState::keyEvent(KeyEvent &keyEvent) {
         return; /* để Fcitx gửi dấu cách */
     }
 
-    /* Xử lý Backspace */
+    /* Xử lý Backspace — chế độ commit trực tiếp */
     if (key.check(FcitxKey_BackSpace)) {
         uint8_t buf[256];
         size_t actualLen = 0;
         size_t backspaces = 0;
         int processed = vnkey_engine_backspace(
-            vnkeyEngine_, buf, sizeof(buf), &actualLen, &backspaces);
+            vnkeyEngine_, buf, sizeof(buf), &actualLen, &backspaces, nullptr);
 
         if (processed && (backspaces > 0 || actualLen > 0)) {
-            /* Xóa 'backspaces' ký tự UTF-8 từ preedit */
-            for (size_t i = 0; i < backspaces; i++) {
-                if (!preedit_.empty()) {
-                    auto len = preedit_.size();
-                    while (len > 0 &&
-                           (static_cast<unsigned char>(preedit_[len - 1]) & 0xC0) == 0x80) {
-                        len--;
-                    }
-                    if (len > 0) {
-                        len--;
-                    }
-                    preedit_.resize(len);
-                }
+            /* Xóa ký tự đã commit */
+            if (backspaces > 0 &&
+                ic_->capabilityFlags().test(CapabilityFlag::SurroundingText)) {
+                ic_->deleteSurroundingText(
+                    -static_cast<int>(backspaces),
+                    static_cast<unsigned int>(backspaces));
             }
-            /* Thêm đầu ra mới */
+            /* Commit đầu ra mới */
             if (actualLen > 0) {
-                preedit_.append(reinterpret_cast<const char *>(buf), actualLen);
+                directCommit(reinterpret_cast<const char *>(buf), actualLen);
             }
-
-            /* Cập nhật hiển thị preedit */
-            if (ic_->capabilityFlags().test(CapabilityFlag::Preedit)) {
-                Text preeditText;
-                preeditText.append(preedit_,
-                                   TextFormatFlag::Underline);
-                preeditText.setCursor(preedit_.size());
-                ic_->inputPanel().setClientPreedit(preeditText);
-                ic_->updatePreedit();
-                ic_->updateUserInterface(
-                    UserInterfaceComponent::InputPanel);
-            }
-
             keyEvent.filterAndAccept();
             return;
         }
 
-        /* Engine không xử lý: commit và để hệ thống xử lý backspace */
-        if (!preedit_.empty()) {
-            commitPreedit();
-        }
+        /* Engine không xử lý: cho hệ thống xử lý backspace */
         return;
     }
 
-    /* Phím ASCII in được â gửi tới vnkey engine */
+    /* Phím ASCII in được  commit trực tiếp (không preedit/gạch chân) */
     auto sym = key.sym();
-    if (sym >= FcitxKey_exclam && sym <= FcitxKey_asciitilde) {        /* Nếu preedit rỗng, thử đọc surrounding text để khôi phục ngữ cảnh
-         * (vd: đã commit 'g', xóa phần sau, gõ tiếp → engine cần biết 'g') */
-        trySurroundingContext();
+    if (sym >= FcitxKey_exclam && sym <= FcitxKey_asciitilde) {
+        /* Không gọi trySurroundingContext() trong chế độ commit trực tiếp:
+         * Surrounding text chứa ký tự đã commit thô (ASCII) hoặc phần đuôi
+         * của từ tiếng Việt (ví dụ 'o' sau 'à'), nạp lại sẽ gộp hai từ
+         * thành một từ dài vô nghĩa → engine đánh dấu NonVn → mất dấu. */
         uint32_t keyCode = static_cast<uint32_t>(sym);
         uint8_t buf[256];
         size_t actualLen = 0;
         size_t backspaces = 0;
 
         int processed = vnkey_engine_process(
-            vnkeyEngine_, keyCode, buf, sizeof(buf), &actualLen, &backspaces);
+            vnkeyEngine_, keyCode, buf, sizeof(buf), &actualLen, &backspaces, nullptr);
+
+        bool hasSurrounding = ic_->capabilityFlags().test(CapabilityFlag::SurroundingText);
+        fprintf(stderr, "[vnkey] process: key=%c(0x%x) processed=%d bs=%zu len=%zu surrounding=%d\n",
+                (keyCode >= 0x20 && keyCode < 0x7f) ? (char)keyCode : '?',
+                keyCode, processed, backspaces, actualLen, hasSurrounding);
 
         if (processed) {
-            /* Xóa 'backspaces' ký tự UTF-8 từ preedit_ */
-            for (size_t i = 0; i < backspaces; i++) {
-                if (!preedit_.empty()) {
-                    auto len = preedit_.size();
-                    while (len > 0 &&
-                           (static_cast<unsigned char>(preedit_[len - 1]) & 0xC0) == 0x80) {
-                        len--;
-                    }
-                    if (len > 0) {
-                        len--;
-                    }
-                    preedit_.resize(len);
+            /* Xóa ký tự đã commit bằng deleteSurroundingText */
+            if (backspaces > 0) {
+                if (hasSurrounding) {
+                    ic_->deleteSurroundingText(
+                        -static_cast<int>(backspaces),
+                        static_cast<unsigned int>(backspaces));
+                    fprintf(stderr, "[vnkey] deleteSurrounding: %zu\n", backspaces);
+                } else {
+                    fprintf(stderr, "[vnkey] WARNING: need %zu backspaces but no SurroundingText!\n", backspaces);
                 }
             }
-
-            /* Thêm đầu ra mới */
+            /* Commit đầu ra mới */
             if (actualLen > 0) {
-                preedit_.append(reinterpret_cast<const char *>(buf), actualLen);
+                directCommit(reinterpret_cast<const char *>(buf), actualLen);
             }
         } else {
-            /* Engine không biến đổi phím, nhưng vẫn có thể đang theo dõi
-             * nội bộ (vd: 'm','u','o','n' trước phím thanh như 'f').
-             * Giữ ký tự trong preedit để backspace sau này hoạt động. */
+            /* Engine không xử lý: commit ký tự thô */
             char ch = static_cast<char>(keyCode);
-            preedit_.append(&ch, 1);
+            directCommit(&ch, 1);
         }
 
-        /* Nếu engine báo ranh giới từ, commit ngay */
+        /* Nếu engine ở ranh giới từ, reset */
         if (vnkey_engine_at_word_beginning(vnkeyEngine_)) {
-            commitPreedit();
-        } else {
-            /* Cập nhật preedit */
-            if (ic_->capabilityFlags().test(CapabilityFlag::Preedit)) {
-                Text preeditText;
-                preeditText.append(preedit_,
-                                   TextFormatFlag::Underline);
-                preeditText.setCursor(preedit_.size());
-                ic_->inputPanel().setClientPreedit(preeditText);
-                ic_->updatePreedit();
-                ic_->updateUserInterface(
-                    UserInterfaceComponent::InputPanel);
-            }
+            vnkey_engine_reset(vnkeyEngine_);
         }
 
         keyEvent.filterAndAccept();

@@ -145,11 +145,26 @@ EOF
     fi
 }
 
+# ── Restart fcitx5 to pick up new addon ──
+restart_fcitx5() {
+    if command -v fcitx5-remote >/dev/null 2>&1; then
+        # Try graceful restart via fcitx5-remote
+        if fcitx5-remote >/dev/null 2>&1; then
+            log "Restarting fcitx5..."
+            fcitx5-remote -r 2>/dev/null || true
+            log "fcitx5 restarted. VnKey should appear in input method list."
+            return 0
+        fi
+    fi
+    log "fcitx5 is not running. VnKey will be available after next fcitx5 start."
+}
+
 # ── Main ──
 log "Running post-install..."
 install_fcitx5_if_missing
 configure_im_framework
 refresh_caches
 setup_autostart
-log "Done. Please log out and log back in to activate Fcitx5 with VnKey Vietnamese."
+restart_fcitx5
+log "Done. Please log out and log back in if VnKey does not appear."
 exit 0

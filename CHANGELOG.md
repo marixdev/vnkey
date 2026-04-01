@@ -1,5 +1,59 @@
 # Changelog
 
+## 1.0.2 — 2026-04-01
+
+### vnkey-engine
+- Thêm module `app_charset`: hỗ trợ cấu hình bảng mã riêng theo từng ứng dụng (per-app charset override)
+- Thêm FFI: `vnkey_app_charset_from_json`, `vnkey_app_charset_to_json`, `vnkey_app_charset_update`, `vnkey_app_charset_get_current`
+- Thêm `backspaces_bytes` trong `ProcessResult` — tính số backspace theo byte cho bảng mã đa byte (VNI-Win, VNI-Mac, BKHCM2, VietWare-X)
+- Thêm `snapshot_output()` + `get_backspaces_for_multi_byte()` để tính chính xác số byte cần xoá trong bảng mã 2-byte
+- Sửa `auto_non_vn_restore` không restore khi từ chỉ toàn phụ âm (ví dụ: "đc", "đk" là viết tắt phổ biến, không nên revert thành "ddc", "ddk")
+- Sửa thứ tự `VS_UY` trong `VC_PAIR_LIST` (vnlexi)
+- Sửa test `test_telex_w_standalone` fail trên NixOS — cập nhật kỳ vọng: `w` → `ư`, `ww` → `w` đúng theo Telex chuẩn (#14)
+- Cải thiện `process_telex_w`: khi đã có nguyên âm, luôn trả kết quả `process_hook` thay vì fall-through tạo `ư` sai (#14)
+- Cập nhật FFI: `vnkey_process`, `vnkey_backspace`, `vnkey_engine_process`, `vnkey_engine_backspace` thêm tham số `backspaces_bytes`
+
+### vnkey-windows
+- Thiết kế lại toàn bộ giao diện cấu hình: chuyển từ win32 + direct2d sang tao + wry (WebView2), phong cách WinUI với inline SVG icons
+- Cửa sổ chính: bố cục 2 cột cân đối, icon SVG chuyên nghiệp cho các nút công cụ (loại trừ, chuyển mã, phím tắt, bảng mã ứng dụng)
+- Cửa sổ phím tắt: thiết kế lại hoàn toàn — hỗ trợ gán phím tắt cho cả **bảng mã** và **kiểu gõ**, giao diện thêm mới bằng dropdown thay vì liệt kê tất cả
+- Cửa sổ loại trừ ứng dụng: thiết kế lại với icon SVG, nút Đóng inline
+- Cửa sổ chuyển đổi bảng mã: thiết kế lại, nút Đóng inline cùng hàng nút hành động
+- Cửa sổ bảng mã theo ứng dụng: chuyển hoàn toàn từ WinAPI sang WebView2
+- Cửa sổ giới thiệu: thêm nút Website (vnkey.app) và GitHub (marixdev/vnkey)
+- Sửa hiện tượng flash trắng khi mở cửa sổ — ẩn window cho đến khi WebView2 render xong (hidden-until-ready)
+- Tắt nút maximize trên tất cả cửa sổ cấu hình
+- Hiển thị icon ứng dụng trên thanh tiêu đề (WM_SETICON từ Win32 resource)
+- Tạo mới v.ico (chữ V nền xanh) và e.ico (chữ E nền đỏ) chuyên nghiệp
+- Dọn dẹp file không sử dụng (file Slint cũ, backup, SVG rời)
+- Sửa Ctrl+Shift+N/V kích hoạt chuyển ngôn ngữ — defer toggle đến keyup, huỷ nếu có phím khác xen giữa (#15)
+- Sửa xung đột với Kanata (keyboard remapping) — phím không xử lý dùng `CallNextHookEx` thay vì block + reinject qua `SendInput` (#13)
+
+### vnkey-fcitx5
+- **Chuyển sang chế độ commit trực tiếp** (không dùng preedit/gạch chân) — sửa lỗi hiển thị sai trên nhiều ứng dụng GTK/Qt
+- Dùng `deleteSurroundingText` thay vì xoá ký tự từ preedit buffer khi backspace
+- Thêm `directCommit()`: commit trực tiếp với chuyển mã bảng mã đích + per-app charset override
+- Thiết kế lại menu tray: tách thành submenu riêng cho Kiểu gõ, Bảng mã, toggle Spell/Free/Modern, Clipboard — thay vì một menu phẳng
+- Thêm visual bullet (●) cho radio items trong submenu (workaround GNOME Shell AppIndicator)
+- Thêm `syncActiveIC()` + `settingsGen_` để đồng bộ cài đặt ngay lập tức khi đổi từ menu (không cần đợi focus_in)
+- Hỗ trợ per-app charset: tự phát hiện app đang focus, áp dụng bảng mã riêng cho từng ứng dụng
+- Lưu/nạp `app_charsets` trong config JSON
+- Thêm `Enabled=True`, `OnDemand=True` trong addon.conf
+- postinst: tự động restart fcitx5 sau cài đặt (`fcitx5-remote -r`)
+- Thêm glibc compat stubs: `pidfd_getpid`, `pidfd_spawnp` (GLIBC_2.39) cho tương thích glibc cũ
+
+### vnkey-ibus
+- **Chuyển sang chế độ commit trực tiếp** (không dùng preedit/gạch chân) — sửa lỗi hiển thị sai trên nhiều ứng dụng GTK
+- Dùng `ibus_engine_delete_surrounding_text` thay vì xoá ký tự từ preedit buffer khi backspace
+- Thêm `direct_commit()`: commit trực tiếp với chuyển mã bảng mã đích + per-app charset override
+- Hỗ trợ per-app charset: phát hiện app bằng `xdotool getactivewindow getwindowpid` + `/proc/PID/exe`, áp dụng bảng mã riêng
+- Lưu/nạp `app_charsets` trong config JSON
+
+### vnkey-macos
+- Cập nhật FFI header: thêm tham số `backspaces_bytes` (truyền NULL — macOS dùng UTF-8)
+
+---
+
 ## 1.0.1 — 2026-03-29
 
 ### vnkey-engine

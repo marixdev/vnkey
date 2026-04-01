@@ -1,8 +1,10 @@
 #![windows_subsystem = "windows"]
 
+mod app_charset;
 mod blacklist;
 mod config;
 mod converter;
+pub mod debug_log;
 mod gui;
 mod hook;
 mod hotkey;
@@ -10,8 +12,7 @@ mod info;
 mod osd;
 mod tray;
 mod send;
-#[allow(dead_code)]
-mod ui;
+mod webview;
 
 use std::sync::Mutex;
 use vnkey_engine::{Engine, InputMethod, Options};
@@ -132,11 +133,30 @@ fn main() {
         return;
     }
 
+    // Khởi tạo debug log (tạo file %TEMP%\vnkey_debug để bật)
+    debug_log::init();
+    debug_log::log("=== VnKey started ===");
+
     // Khởi tạo engine
     *ENGINE.lock().unwrap_or_else(|e| e.into_inner()) = Some(EngineState::new());
 
     // Tải cài đặt đã lưu
     config::load();
+
+    // Tự nâng quyền Admin nếu đã bật tùy chọn và chưa chạy elevated
+    if tray::get_run_as_admin() && !tray::is_elevated() {
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        unsafe {
+            let mut buf = [0u16; 260];
+            let len = windows::Win32::System::LibraryLoader::GetModuleFileNameW(None, &mut buf);
+            if len > 0 {
+                ShellExecuteW(HWND::default(), w!("runas"), PCWSTR(buf.as_ptr()),
+                    PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL);
+                return; // thoát instance thường, instance admin sẽ chạy
+            }
+        }
+    }
 
     // Tạo cửa sổ ẩn cho message pump
     let hwnd = create_hidden_window();
@@ -265,6 +285,35 @@ unsafe extern "system" fn wnd_proc(
                 }
             } else if id == crate::hotkey::HOTKEY_ID_CONVERT {
                 converter::convert_clipboard();
+            } else if let Some(ch) = crate::hotkey::custom_hotkey_for_id(id) {
+                use crate::hotkey::HkKind;
+                match ch.kind {
+                    HkKind::Cs => {
+                        if let Ok(mut guard) = ENGINE.lock() {
+                            if let Some(state) = guard.as_mut() {
+                                state.output_charset = ch.id;
+                            }
+                        }
+                        config::save();
+                        let cs_names = ["Unicode","UTF-8","NCR Decimal","NCR Hex","","CP-1258",
+                            "","","","","VIQR","","","","","","","","","","TCVN3 (ABC)",
+                            "VPS","VISCII","","","","","","","","","","","","","","","","","","VNI Windows",
+                            "","","VNI Mac"];
+                        let name = cs_names.get(ch.id as usize).unwrap_or(&"?");
+                        osd::show(&format!("Bảng mã: {name}"));
+                    }
+                    HkKind::Im => {
+                        if let Ok(mut guard) = ENGINE.lock() {
+                            if let Some(state) = guard.as_mut() {
+                                state.set_input_method(ch.id);
+                            }
+                        }
+                        config::save();
+                        let im_names = ["Telex","Simple Telex","VNI","VIQR","MS Vietnamese"];
+                        let name = im_names.get(ch.id as usize).unwrap_or(&"?");
+                        osd::show(&format!("Kiểu gõ: {name}"));
+                    }
+                }
             }
             LRESULT(0)
         }

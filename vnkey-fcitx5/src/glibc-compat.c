@@ -70,3 +70,33 @@ int _dl_find_object(void *pc, struct dl_find_object *result) {
     (void)result;
     return -1;  /* không tìm thấy → dùng phương án dl_iterate_phdr */
 }
+
+/*
+ * pidfd_getpid / pidfd_spawnp — GLIBC_2.39
+ * Dùng bởi Rust std (process::Command) trên glibc mới để spawn/quản lý
+ * tiến trình con qua pidfd. VnKey IME không spawn tiến trình nên trả lỗi
+ * ENOSYS là đủ — Rust std sẽ dùng phương án dự phòng fork/exec chuẩn.
+ * Đây là weak symbol nên chỉ cần cung cấp stub.
+ */
+#include <spawn.h>
+#include <signal.h>
+
+int pidfd_getpid(int pidfd) {
+    (void)pidfd;
+    errno = ENOSYS;
+    return -1;
+}
+
+int pidfd_spawnp(int *pidfd, const char *file,
+                 const posix_spawn_file_actions_t *file_actions,
+                 const posix_spawnattr_t *attrp,
+                 char *const argv[], char *const envp[]) {
+    (void)pidfd;
+    (void)file;
+    (void)file_actions;
+    (void)attrp;
+    (void)argv;
+    (void)envp;
+    errno = ENOSYS;
+    return ENOSYS;
+}

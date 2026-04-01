@@ -1,163 +1,74 @@
-//! Cửa sổ giới thiệu (Win32 + Direct2D).
+//! Cửa sổ giới thiệu — tao + wry.
 
-use crate::ui;
+use crate::webview::{self, UiEvent};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use windows::core::*;
-use windows::Win32::Foundation::*;
-use windows::Win32::Graphics::Direct2D::Common::*;
-use windows::Win32::Graphics::Direct2D::*;
-use windows::Win32::Graphics::DirectWrite::*;
-use windows::Win32::Graphics::Gdi::*;
-use windows::Win32::UI::Shell::ShellExecuteW;
-use windows::Win32::UI::WindowsAndMessaging::*;
-
 static INFO_OPEN: AtomicBool = AtomicBool::new(false);
-
-/// Vùng liên kết nhấp được: (top_y, bottom_y, url)
-const LINK_EMAIL: (f32, f32, &str) = (178.0, 196.0, "mailto:hi@vnkey.app");
-const LINK_WEBSITE: (f32, f32, &str) = (196.0, 214.0, "https://vnkey.app");
-const LINK_GITHUB: (f32, f32, &str) = (214.0, 232.0, "https://github.com/marixdev/vnkey");
-const LINKS: [(f32, f32, &str); 3] = [LINK_EMAIL, LINK_WEBSITE, LINK_GITHUB];
 
 pub fn open_info_window() {
     if INFO_OPEN.swap(true, Ordering::SeqCst) { return; }
     std::thread::spawn(|| {
-        run_info();
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_info()));
+        if let Err(e) = r { eprintln!("[info] panic: {e:?}"); }
         INFO_OPEN.store(false, Ordering::Relaxed);
     });
 }
 
-fn run_info() {
-    ui::init_common_controls();
-
-    let hwnd = ui::create_dialog_window(
-        w!("VnKeyInfo"),
-        &format!("Giới thiệu – VnKey {}", crate::gui::VERSION),
-        360, 270,
-        Some(info_wnd_proc),
-    );
-    if hwnd.0.is_null() { return; }
-
-    // Lưu render target vào dữ liệu cửa sổ
-    let rt = ui::create_render_target(hwnd, 360, 270);
-    let rt_boxed = Box::new(rt);
-    unsafe {
-        SetWindowLongPtrW(hwnd, GWLP_USERDATA, Box::into_raw(rt_boxed) as isize);
-    }
-
-    ui::show_and_focus(hwnd);
-    ui::run_dialog_loop(hwnd);
+fn build_html() -> String {
+    let ver = crate::gui::VERSION;
+    let body = format!(r##"
+<div class="container" style="text-align:center">
+  <div style="padding:12px 0">
+    <div style="font-size:48px">⌨</div>
+    <h1 style="font-size:22px;color:var(--accent);margin:8px 0">VnKey {ver}</h1>
+    <p style="color:var(--text-dim);font-size:13px">Bộ gõ tiếng Việt cho Windows</p>
+  </div>
+  <div class="group" style="text-align:left">
+    <div class="group-title">Thông tin</div>
+    <p style="font-size:13px;line-height:1.8;color:var(--text-dim)">
+      <b style="color:var(--text)">Tác giả:</b> VnKey Team<br>
+      <b style="color:var(--text)">Giấy phép:</b> GPL-3.0<br>
+      <b style="color:var(--text)">Engine:</b> vnkey-engine (Rust)<br>
+      <b style="color:var(--text)">GUI:</b> WebView2 + tao/wry
+    </p>
+  </div>
+  <div style="display:flex;gap:8px;justify-content:center">
+    <button onclick="cmd({{cmd:'url',url:'https://vnkey.app'}})">🌐 Website</button>
+    <button onclick="cmd({{cmd:'url',url:'https://github.com/marixdev/vnkey'}})">GitHub</button>
+    <button onclick="cmd({{cmd:'close'}})">Đóng</button>
+  </div>
+</div>
+"##);
+    webview::html(&body, "")
 }
 
-unsafe extern "system" fn info_wnd_proc(
-    hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM,
-) -> LRESULT {
-    match msg {
-        WM_PAINT => {
-            let rt_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut ID2D1HwndRenderTarget;
-            if !rt_ptr.is_null() {
-                paint_info(&*rt_ptr);
-            }
-            // Xác nhận vùng vẽ
-            let _ = ValidateRect(hwnd, None);
-            LRESULT(0)
-        }
-        WM_LBUTTONUP => {
-            let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as f32;
-            for &(top, bot, url) in &LINKS {
-                if y >= top && y < bot {
-                    let url_w: Vec<u16> = url.encode_utf16().chain(std::iter::once(0)).collect();
-                    ShellExecuteW(hwnd, w!("open"), PCWSTR(url_w.as_ptr()), None, None, SW_SHOW);
-                    break;
+fn handle_ipc(body: &str, proxy: tao::event_loop::EventLoopProxy<UiEvent>) {
+    let msg: serde_json::Value = match serde_json::from_str(body) {
+        Ok(v) => v, Err(_) => return,
+    };
+    let cmd = msg["cmd"].as_str().unwrap_or("");
+    match cmd {
+        "url" => {
+            if let Some(url) = msg["url"].as_str() {
+                // Mở URL bằng ShellExecuteW
+                use windows::core::*;
+                use windows::Win32::Foundation::HWND;
+                use windows::Win32::UI::Shell::ShellExecuteW;
+                use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+                let wide: Vec<u16> = url.encode_utf16().chain(std::iter::once(0)).collect();
+                unsafe {
+                    ShellExecuteW(HWND::default(), w!("open"),
+                        PCWSTR(wide.as_ptr()), PCWSTR::null(), PCWSTR::null(),
+                        SW_SHOWNORMAL);
                 }
             }
-            LRESULT(0)
         }
-        WM_SETCURSOR => {
-            // Kiểm tra chuột có nằm trên vùng liên kết không
-            let mut pt = POINT::default();
-            let _ = GetCursorPos(&mut pt);
-            let _ = ScreenToClient(hwnd, &mut pt);
-            let y = pt.y as f32;
-            let over_link = LINKS.iter().any(|&(top, bot, _)| y >= top && y < bot);
-            if over_link {
-                SetCursor(LoadCursorW(None, IDC_HAND).unwrap_or_default());
-                return LRESULT(1);
-            }
-            DefWindowProcW(hwnd, msg, wparam, lparam)
-        }
-        WM_CLOSE => { DestroyWindow(hwnd).ok(); LRESULT(0) }
-        WM_DESTROY => {
-            // Dọn dẹp render target
-            let rt_ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut ID2D1HwndRenderTarget;
-            if !rt_ptr.is_null() {
-                let _ = Box::from_raw(rt_ptr);
-                SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-            }
-            PostQuitMessage(0);
-            LRESULT(0)
-        }
-        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+        "close" => { let _ = proxy.send_event(UiEvent::Close); }
+        _ => {}
     }
 }
 
-fn paint_info(rt: &ID2D1HwndRenderTarget) {
-    let fmt_title = ui::text_format(22.0, DWRITE_FONT_WEIGHT_SEMI_BOLD);
-    let fmt_ver = ui::text_format_normal(13.0);
-    let fmt_body = ui::text_format_normal(13.0);
-    let fmt_small = ui::text_format_normal(12.0);
-
-    // Canh giữa chữ
-    unsafe {
-        fmt_title.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER).ok();
-        fmt_ver.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER).ok();
-        fmt_body.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER).ok();
-        fmt_small.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER).ok();
-    }
-
-    let w = 360.0f32;
-
-    unsafe {
-        rt.BeginDraw();
-        rt.Clear(Some(&ui::CLR_BG));
-
-        // Tiêu đề
-        ui::draw_text(rt, "VnKey", &fmt_title,
-            D2D_RECT_F { left: 0.0, top: 24.0, right: w, bottom: 54.0 },
-            ui::CLR_ACCENT);
-
-        // Phiên bản
-        let ver = format!("Phiên bản {}", crate::gui::VERSION);
-        ui::draw_text(rt, &ver, &fmt_ver,
-            D2D_RECT_F { left: 0.0, top: 56.0, right: w, bottom: 76.0 },
-            ui::CLR_LABEL);
-
-        // Mô tả
-        ui::draw_text(rt, "Bộ gõ tiếng Việt đa nền tảng.", &fmt_body,
-            D2D_RECT_F { left: 0.0, top: 96.0, right: w, bottom: 116.0 },
-            ui::CLR_TEXT);
-        ui::draw_text(rt, "Hỗ trợ Telex, VNI, VIQR và nhiều bảng mã.", &fmt_body,
-            D2D_RECT_F { left: 0.0, top: 116.0, right: w, bottom: 136.0 },
-            ui::CLR_TEXT);
-
-        // Thông tin tác giả
-        ui::draw_text(rt, "Tác giả: Vũ Văn Đạt (MarixDev)", &fmt_small,
-            D2D_RECT_F { left: 0.0, top: 160.0, right: w, bottom: 178.0 },
-            ui::CLR_LABEL);
-        ui::draw_text(rt, "Email: hi@vnkey.app", &fmt_small,
-            D2D_RECT_F { left: 0.0, top: 178.0, right: w, bottom: 196.0 },
-            ui::CLR_ACCENT);
-        ui::draw_text(rt, "Website: https://vnkey.app", &fmt_small,
-            D2D_RECT_F { left: 0.0, top: 196.0, right: w, bottom: 214.0 },
-            ui::CLR_ACCENT);
-        ui::draw_text(rt, "GitHub: https://github.com/marixdev/vnkey", &fmt_small,
-            D2D_RECT_F { left: 0.0, top: 214.0, right: w, bottom: 232.0 },
-            ui::CLR_ACCENT);
-        ui::draw_text(rt, "Giấy phép: GPL v3", &fmt_small,
-            D2D_RECT_F { left: 0.0, top: 236.0, right: w, bottom: 254.0 },
-            ui::CLR_LABEL);
-
-        let _ = rt.EndDraw(None, None);
-    }
+fn run_info() {
+    let html = build_html();
+    webview::run_webview("Giới thiệu VnKey", 360.0, 420.0, &html, handle_ipc);
 }

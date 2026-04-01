@@ -10,9 +10,48 @@
 #include <string.h>
 #include <stdio.h>
 #include <locale.h>
+#include <unistd.h>
+#include <ctype.h>
 
 
 #include "vnkey-engine.h"
+
+/* ==================== Phát hiện app đang focus ==================== */
+
+/* Lấy tên exe của cửa sổ đang focus (Linux).
+ * Thử xdotool, nếu không có thì trả NULL.
+ * Trả chuỗi malloc, cần g_free. */
+static char *get_focused_exe_name(void) {
+    /* Thử xdotool để lấy PID */
+    FILE *fp = popen("xdotool getactivewindow getwindowpid 2>/dev/null", "r");
+    if (!fp) return NULL;
+    char pidbuf[32];
+    if (!fgets(pidbuf, sizeof(pidbuf), fp)) {
+        pclose(fp);
+        return NULL;
+    }
+    pclose(fp);
+
+    pid_t pid = (pid_t)atoi(pidbuf);
+    if (pid <= 0) return NULL;
+
+    /* Đọc /proc/PID/exe */
+    char procpath[64];
+    snprintf(procpath, sizeof(procpath), "/proc/%d/exe", (int)pid);
+    char exepath[1024];
+    ssize_t len = readlink(procpath, exepath, sizeof(exepath) - 1);
+    if (len <= 0) return NULL;
+    exepath[len] = '\0';
+
+    /* Lấy phần basename */
+    const char *base = strrchr(exepath, '/');
+    base = base ? base + 1 : exepath;
+
+    /* Chuyển lowercase */
+    char *result = g_strdup(base);
+    for (char *p = result; *p; p++) *p = tolower((unsigned char)*p);
+    return result;
+}
 
 /* ==================== Cấu hình ==================== */
 
@@ -96,6 +135,28 @@ static int json_get_bool(const char *json, const char *key, int def) {
     return def;
 }
 
+/* Trích xuất JSON object con: "key": { ... }
+ * Trả con trỏ tới chuỗi malloc (cần g_free), hoặc NULL */
+static char *json_get_object(const char *json, const char *key) {
+    char needle[256];
+    snprintf(needle, sizeof(needle), "\"%s\"", key);
+    const char *pos = strstr(json, needle);
+    if (!pos) return NULL;
+    pos = strchr(pos + strlen(needle), '{');
+    if (!pos) return NULL;
+    int depth = 1;
+    const char *start = pos;
+    pos++;
+    while (*pos && depth > 0) {
+        if (*pos == '{') depth++;
+        else if (*pos == '}') depth--;
+        pos++;
+    }
+    if (depth != 0) return NULL;
+    size_t len = pos - start;
+    return g_strndup(start, len);
+}
+
 static void load_config(void) {
     char *path = config_path();
     if (!path) return;
@@ -112,6 +173,14 @@ static void load_config(void) {
     g_config.spell_check    = json_get_bool(contents, "spell_check", 1);
     g_config.free_marking   = json_get_bool(contents, "free_marking", 1);
     g_config.modern_style   = json_get_bool(contents, "modern_style", 1);
+
+    /* Nạp app_charsets */
+    char *ac_json = json_get_object(contents, "app_charsets");
+    if (ac_json) {
+        vnkey_app_charset_from_json(ac_json);
+        g_free(ac_json);
+    }
+
     g_free(contents);
 }
 
@@ -122,23 +191,30 @@ static void save_config(void) {
     char *path = g_strdup_printf("%s/config.json", dir);
     g_free(dir);
 
-    char buf[512];
+    char *ac_json = vnkey_app_charset_to_json();
+    const char *ac_str = ac_json ? ac_json : "{}";
+
+    char buf[4096];
     snprintf(buf, sizeof(buf),
         "{\n"
         "  \"input_method\": %d,\n"
         "  \"output_charset\": %d,\n"
         "  \"spell_check\": %s,\n"
         "  \"free_marking\": %s,\n"
-        "  \"modern_style\": %s\n"
+        "  \"modern_style\": %s,\n"
+        "  \"app_charsets\": %s\n"
         "}\n",
         g_config.input_method,
         g_config.output_charset,
         g_config.spell_check ? "true" : "false",
         g_config.free_marking ? "true" : "false",
-        g_config.modern_style ? "true" : "false"
+        g_config.modern_style ? "true" : "false",
+        ac_str
     );
     g_file_set_contents(path, buf, -1, NULL);
     g_free(path);
+
+    if (ac_json) vnkey_app_charset_free_string(ac_json);
 }
 
 /* ==================== Trợ giúp bảng mã ==================== */
@@ -389,17 +465,7 @@ static void clear_preedit(VnkIBusEngine *self) {
 }
 
 static void update_preedit_display(VnkIBusEngine *self) {
-    IBusEngine *engine = IBUS_ENGINE(self);
-    if (self->preedit_len > 0) {
-        guint nchars = utf8_char_count(self->preedit, self->preedit_len);
-        IBusText *text = ibus_text_new_from_string(self->preedit);
-        ibus_text_append_attribute(text,
-            IBUS_ATTR_TYPE_UNDERLINE, IBUS_ATTR_UNDERLINE_SINGLE,
-            0, nchars);
-        ibus_engine_update_preedit_text(engine, text, nchars, TRUE);
-    } else {
-        ibus_engine_hide_preedit_text(engine);
-    }
+    (void)self; /* không dùng preedit, commit trực tiếp */
 }
 
 /* Xóa n ký tự UTF-8 từ cuối preedit */
@@ -426,29 +492,23 @@ static void preedit_append(VnkIBusEngine *self, const uint8_t *data, size_t len)
     }
 }
 
-static void commit_preedit_ex(VnkIBusEngine *self, int soft) {
-    if (self->preedit_len == 0) {
-        if (soft)
-            vnkey_engine_soft_reset(self->engine);
-        else
-            vnkey_engine_reset(self->engine);
-        return;
-    }
+/* Commit văn bản UTF-8 trực tiếp (chế độ không preedit) */
+static void direct_commit(VnkIBusEngine *self, const char *utf8, size_t len) {
     IBusEngine *engine = IBUS_ENGINE(self);
-
-    g_message("vnkey: commit preedit '%s' (len=%zu)", self->preedit, self->preedit_len);
-
     int charset = g_config.output_charset;
+    /* Kiểm tra per-app charset override */
+    int app_cs = vnkey_app_charset_get_current();
+    if (app_cs >= 0) charset = app_cs;
     if (charset == 1) {
-        /* UTF-8: commit trực tiếp */
-        IBusText *text = ibus_text_new_from_string(self->preedit);
+        char *s = g_strndup(utf8, len);
+        IBusText *text = ibus_text_new_from_string(s);
         ibus_engine_commit_text(engine, text);
+        g_free(s);
     } else {
-        /* Chuyển sang bảng mã đích */
         uint8_t buf[4096];
         size_t actual_len = 0;
         int ret = vnkey_charset_from_utf8(
-            (const uint8_t *)self->preedit, self->preedit_len,
+            (const uint8_t *)utf8, len,
             charset, buf, sizeof(buf), &actual_len);
         if (ret == 0 && actual_len > 0) {
             if (is_utf8_charset(charset)) {
@@ -464,14 +524,20 @@ static void commit_preedit_ex(VnkIBusEngine *self, int soft) {
                 g_free(s);
             }
         } else {
-            /* Dự phòng: dùng UTF-8 */
-            IBusText *text = ibus_text_new_from_string(self->preedit);
+            char *s = g_strndup(utf8, len);
+            IBusText *text = ibus_text_new_from_string(s);
             ibus_engine_commit_text(engine, text);
+            g_free(s);
         }
     }
+}
 
-    clear_preedit(self);
-    ibus_engine_hide_preedit_text(engine);
+static void commit_preedit_ex(VnkIBusEngine *self, int soft) {
+    if (self->preedit_len > 0) {
+        g_message("vnkey: commit preedit '%s' (len=%zu)", self->preedit, self->preedit_len);
+        direct_commit(self, self->preedit, self->preedit_len);
+        clear_preedit(self);
+    }
     if (soft)
         vnkey_engine_soft_reset(self->engine);
     else
@@ -670,6 +736,12 @@ static void vnk_ibus_engine_focus_in(IBusEngine *engine) {
     VnkIBusEngine *self = (VnkIBusEngine *)engine;
     sync_settings(self);
     register_properties(self);
+
+    /* Cập nhật charset override theo app đang focus */
+    char *exe = get_focused_exe_name();
+    vnkey_app_charset_update(exe);
+    g_free(exe);
+
     parent_class->focus_in(engine);
 }
 
@@ -829,30 +901,32 @@ static gboolean vnk_ibus_engine_process_key_event(IBusEngine *engine,
         return FALSE;
     }
 
-    /* Xử lý Backspace */
+    /* Xử lý Backspace — chế độ commit trực tiếp */
     if (keyval == IBUS_KEY_BackSpace) {
         uint8_t buf[256];
         size_t actual_len = 0;
         size_t backspaces = 0;
         int processed = vnkey_engine_backspace(
-            self->engine, buf, sizeof(buf), &actual_len, &backspaces);
+            self->engine, buf, sizeof(buf), &actual_len, &backspaces, NULL);
 
         if (processed && (backspaces > 0 || actual_len > 0)) {
-            preedit_remove_chars(self, backspaces);
-            if (actual_len > 0)
-                preedit_append(self, buf, actual_len);
-            update_preedit_display(self);
+            /* Xóa ký tự đã commit */
+            if (backspaces > 0) {
+                ibus_engine_delete_surrounding_text(
+                    IBUS_ENGINE(self), -(gint)backspaces, (guint)backspaces);
+            }
+            /* Commit đầu ra mới */
+            if (actual_len > 0) {
+                direct_commit(self, (const char *)buf, actual_len);
+            }
             return TRUE;
         }
 
-        /* Engine không xử lý */
-        if (self->preedit_len > 0) {
-            commit_preedit(self);
-        }
+        /* Engine không xử lý: cho app xử lý backspace */
         return FALSE;
     }
 
-    /* Phím ASCII in được â gửi tới vnkey engine */
+    /* Phím ASCII in được — commit trực tiếp (không preedit/gạch chân) */
     if (keyval >= IBUS_KEY_exclam && keyval <= IBUS_KEY_asciitilde) {
         /* Nếu preedit rỗng, thử đọc surrounding text để khôi phục ngữ cảnh */
         try_surrounding_context(self);
@@ -863,25 +937,30 @@ static gboolean vnk_ibus_engine_process_key_event(IBusEngine *engine,
 
         int processed = vnkey_engine_process(
             self->engine, (uint32_t)keyval,
-            buf, sizeof(buf), &actual_len, &backspaces);
+            buf, sizeof(buf), &actual_len, &backspaces, NULL);
 
-        g_message("vnkey: key '%c' (0x%x) â†’ processed=%d bs=%zu out=%zu preedit='%s'",
-                  (char)keyval, keyval, processed, backspaces, actual_len, self->preedit);
+        g_message("vnkey: key '%c' (0x%x) -> processed=%d bs=%zu out=%zu",
+                  (char)keyval, keyval, processed, backspaces, actual_len);
 
         if (processed) {
-            preedit_remove_chars(self, backspaces);
-            if (actual_len > 0)
-                preedit_append(self, buf, actual_len);
+            /* Xóa ký tự đã commit bằng delete_surrounding_text */
+            if (backspaces > 0) {
+                ibus_engine_delete_surrounding_text(
+                    IBUS_ENGINE(self), -(gint)backspaces, (guint)backspaces);
+            }
+            /* Commit đầu ra mới */
+            if (actual_len > 0) {
+                direct_commit(self, (const char *)buf, actual_len);
+            }
         } else {
+            /* Engine không xử lý: commit ký tự thô */
             char ch = (char)keyval;
-            preedit_append(self, (const uint8_t *)&ch, 1);
+            direct_commit(self, &ch, 1);
         }
 
-        /* Ranh giới từ â commit ngay */
+        /* Nếu engine ở ranh giới từ, reset */
         if (vnkey_engine_at_word_beginning(self->engine)) {
-            commit_preedit(self);
-        } else {
-            update_preedit_display(self);
+            vnkey_engine_reset(self->engine);
         }
         return TRUE;
     }

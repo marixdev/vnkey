@@ -20,15 +20,18 @@ void vnkey_engine_free(VnKeyEngine *engine);
  * out_buf: nhận byte đầu ra UTF-8
  * out_len: dung lượng out_buf
  * actual_len: nhận số byte thực tế ghi
- * backspaces: nhận số backspace cần gửi trước đầu ra */
+ * backspaces: nhận số backspace cần gửi trước đầu ra
+ * backspaces_bytes: nhận số backspace tính theo byte cho bảng mã đa byte (có thể NULL) */
 int vnkey_engine_process(VnKeyEngine *engine, uint32_t key_code,
                         uint8_t *out_buf, size_t out_len,
-                        size_t *actual_len, size_t *backspaces);
+                        size_t *actual_len, size_t *backspaces,
+                        size_t *backspaces_bytes);
 
 /* Xử lý backspace. Ngữ nghĩa đầu ra giống vnkey_engine_process. */
 int vnkey_engine_backspace(VnKeyEngine *engine,
                           uint8_t *out_buf, size_t out_len,
-                          size_t *actual_len, size_t *backspaces);
+                          size_t *actual_len, size_t *backspaces,
+                          size_t *backspaces_bytes);
 
 /* Đặt lại trạng thái engine (vd: khi đổi focus) */
 void vnkey_engine_reset(VnKeyEngine *engine);

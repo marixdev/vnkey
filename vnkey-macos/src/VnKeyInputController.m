@@ -166,7 +166,7 @@ static void removeLastChars(NSMutableString *str, NSUInteger count) {
 
     int processed = vnkey_engine_process(
         _engine, (uint32_t)ch,
-        outBuf, sizeof(outBuf), &actualLen, &backspaces);
+        outBuf, sizeof(outBuf), &actualLen, &backspaces, NULL);
 
     if (processed) {
         /* Xóa backspaces ký tự từ preedit */
@@ -203,7 +203,7 @@ static void removeLastChars(NSMutableString *str, NSUInteger count) {
     size_t backspaces = 0;
 
     int processed = vnkey_engine_backspace(
-        _engine, outBuf, sizeof(outBuf), &actualLen, &backspaces);
+        _engine, outBuf, sizeof(outBuf), &actualLen, &backspaces, NULL);
 
     if (processed && backspaces > 1) {
         /* Engine yêu cầu xóa nhiều hơn 1 ký tự (undo dấu) */

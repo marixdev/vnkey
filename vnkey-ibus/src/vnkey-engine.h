@@ -20,15 +20,18 @@ void vnkey_engine_free(VnKeyEngine *engine);
  * out_buf: nhận byte đầu ra UTF-8
  * out_len: dung lượng out_buf
  * actual_len: nhận số byte thực tế ghi
- * backspaces: nhận số backspace cần gửi trước đầu ra */
+ * backspaces: nhận số backspace cần gửi trước đầu ra
+ * backspaces_bytes: nhận số backspace tính theo byte cho bảng mã đa byte (có thể NULL) */
 int vnkey_engine_process(VnKeyEngine *engine, uint32_t key_code,
                         uint8_t *out_buf, size_t out_len,
-                        size_t *actual_len, size_t *backspaces);
+                        size_t *actual_len, size_t *backspaces,
+                        size_t *backspaces_bytes);
 
 /* Xử lý backspace. Ngữ nghĩa đầu ra giống vnkey_engine_process. */
 int vnkey_engine_backspace(VnKeyEngine *engine,
                           uint8_t *out_buf, size_t out_len,
-                          size_t *actual_len, size_t *backspaces);
+                          size_t *actual_len, size_t *backspaces,
+                          size_t *backspaces_bytes);
 
 /* Đặt lại trạng thái engine (vd: khi đổi focus) */
 void vnkey_engine_reset(VnKeyEngine *engine);
@@ -72,6 +75,27 @@ int vnkey_charset_to_utf8(const uint8_t *input, size_t input_len,
                          int charset_id,
                          uint8_t *out_buf, size_t out_len,
                          size_t *actual_len);
+
+/* ==================== App Charset (per-app charset mapping) ==================== */
+
+/* Nạp cấu hình app_charset từ chuỗi JSON.
+ * Ví dụ: {"wps.exe": 20, "myapp.exe": 23} */
+void vnkey_app_charset_from_json(const char *json);
+
+/* Xuất cấu hình app_charset ra chuỗi JSON.
+ * Caller phải giải phóng kết quả bằng vnkey_app_charset_free_string. */
+char *vnkey_app_charset_to_json(void);
+
+/* Giải phóng chuỗi trả về từ vnkey_app_charset_to_json. */
+void vnkey_app_charset_free_string(char *s);
+
+/* Cập nhật charset override cho app hiện tại.
+ * exe_name: tên exe (lowercase, UTF-8), hoặc NULL nếu không xác định. */
+void vnkey_app_charset_update(const char *exe_name);
+
+/* Lấy charset override cho app hiện tại.
+ * Trả charset_id nếu có override, -1 nếu dùng mặc định. */
+int vnkey_app_charset_get_current(void);
 
 #ifdef __cplusplus
 }

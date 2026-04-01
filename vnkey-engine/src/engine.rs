@@ -73,6 +73,9 @@ struct KeyBufEntry {
 #[derive(Debug, Clone)]
 pub struct ProcessResult {
     pub backspaces: usize,
+    /// Số backspaces theo byte cho bảng mã đa byte (VNI-Win, VNI-Mac, BKHCM2, VietWare-X).
+    /// Mỗi ký tự tiếng Việt = 2 byte, ASCII = 1 byte.
+    pub backspaces_bytes: usize,
     pub output: Vec<u8>,
     pub out_type: OutputType,
     pub processed: bool,
@@ -97,6 +100,10 @@ pub struct Engine {
     saved_single_mode: bool,
     saved_to_escape: bool,
     has_saved_state: bool,
+
+    /// Snapshot output UTF-8 trước process() để tính backspaces cho bảng mã đa byte
+    prev_output: Vec<u8>,
+    prev_change_start: usize,
 
     pub input: InputProcessor,
     pub options: Options,
@@ -123,6 +130,9 @@ impl Engine {
             saved_single_mode: false,
             saved_to_escape: false,
             has_saved_state: false,
+
+            prev_output: Vec::new(),
+            prev_change_start: 0,
 
             input: InputProcessor::new(),
             options: Options::default(),
@@ -217,6 +227,10 @@ impl Engine {
         self.change_pos = self.current + 1;
         self.reverted = false;
 
+        // Snapshot toàn bộ output hiện tại TRƯỚC khi dispatch modify buffer
+        // Dùng cho get_backspaces_for_multi_byte
+        self.snapshot_output();
+
         let ev = self.input.key_code_to_event(key_code);
 
         let ret;
@@ -268,6 +282,7 @@ impl Engine {
                 let output = self.write_output();
                 return ProcessResult {
                     backspaces: self.backs,
+                    backspaces_bytes: self.get_backspaces_for_multi_byte(),
                     output,
                     out_type: OutputType::Char,
                     processed: true,
@@ -275,6 +290,7 @@ impl Engine {
             }
             return ProcessResult {
                 backspaces: 0,
+                backspaces_bytes: 0,
                 output: Vec::new(),
                 out_type: OutputType::Char,
                 processed: false,
@@ -284,6 +300,7 @@ impl Engine {
         let output = self.write_output();
         ProcessResult {
             backspaces: self.backs,
+            backspaces_bytes: self.get_backspaces_for_multi_byte(),
             output,
             out_type: OutputType::Char,
             processed: true,
@@ -297,6 +314,7 @@ impl Engine {
             if self.restore_saved_state() {
                 return ProcessResult {
                     backspaces: 0,
+                    backspaces_bytes: 0,
                     output: Vec::new(),
                     out_type: OutputType::Char,
                     processed: false,
@@ -304,6 +322,7 @@ impl Engine {
             }
             return ProcessResult {
                 backspaces: 0,
+                backspaces_bytes: 0,
                 output: Vec::new(),
                 out_type: OutputType::Char,
                 processed: false,
@@ -312,6 +331,7 @@ impl Engine {
 
         self.backs = 0;
         self.change_pos = self.current + 1;
+        self.snapshot_output();
         self.mark_change(self.current);
 
         let form = self.buf(self.current).form;
@@ -329,6 +349,7 @@ impl Engine {
             self.synch_key_stroke_buffer();
             return ProcessResult {
                 backspaces: self.backs,
+                backspaces_bytes: self.get_backspaces_for_multi_byte(),
                 output: Vec::new(),
                 out_type: OutputType::Char,
                 processed: self.backs > 1,
@@ -351,6 +372,7 @@ impl Engine {
             self.synch_key_stroke_buffer();
             return ProcessResult {
                 backspaces: self.backs,
+                backspaces_bytes: self.get_backspaces_for_multi_byte(),
                 output: Vec::new(),
                 out_type: OutputType::Char,
                 processed: self.backs > 1,
@@ -367,6 +389,7 @@ impl Engine {
         let output = self.write_output();
         ProcessResult {
             backspaces: self.backs,
+            backspaces_bytes: self.get_backspaces_for_multi_byte(),
             output,
             out_type: OutputType::Char,
             processed: true,
@@ -434,8 +457,42 @@ impl Engine {
     fn get_seq_steps(&self, first: i32, last: i32) -> usize {
         if last < first { return 0; }
         // Với UTF-8, mỗi ký tự = 1 bước cho backspace
-        // Các bảng mã đa byte cần tính khác
+        // Các bảng mã đa byte cần tính khác (xem get_backspaces_for_multi_byte)
         (last - first + 1) as usize
+    }
+
+    /// Snapshot toàn bộ output hiện tại vào prev_output/prev_change_start.
+    /// Dùng trước khi dispatch modify buffer để tính backspaces cho bảng mã đa byte.
+    fn snapshot_output(&mut self) {
+        let old_change_pos = self.change_pos;
+        self.change_pos = 0; // tạm thời cho write_output xuất toàn bộ
+        self.prev_output = self.write_output();
+        self.prev_change_start = (self.current + 1) as usize;
+        self.change_pos = old_change_pos; // phục hồi
+    }
+
+    /// Tính số backspaces cho bảng mã đa byte (VNI-Win, VNI-Mac, BKHCM2, VietWare-X).
+    /// Trong bảng mã đa byte, mỗi ký tự tiếng Việt = 2 byte, ASCII = 1 byte.
+    pub fn get_backspaces_for_multi_byte(&self) -> usize {
+        let prev_str = String::from_utf8_lossy(&self.prev_output);
+        let chars: Vec<char> = prev_str.chars().collect();
+
+        let start = self.change_pos as usize;
+        let end = self.prev_change_start.min(chars.len());
+
+        if start >= end {
+            return self.backs; // fallback, không có chars cũ để tính
+        }
+
+        let mut count = 0;
+        for i in start..end {
+            if chars[i] as u32 > 127 {
+                count += 2; // ký tự tiếng Việt = 2 bytes trong VNI
+            } else {
+                count += 1; // ASCII = 1 byte
+            }
+        }
+        count
     }
 
     fn prepare_buffer(&mut self) {
@@ -491,25 +548,36 @@ impl Engine {
         }
 
         // Kiểm tra xem có ký tự nào đã bị biến đổi tiếng Việt không
+        // Đồng thời kiểm tra xem từ có chứa nguyên âm không
         let mut has_modification = false;
+        let mut has_vowel = false;
         for i in word_start..self.current {
             let entry = &self.buffer[i as usize];
+            if entry.vn_sym.is_vowel() {
+                has_vowel = true;
+            }
             if entry.tone != 0 {
                 has_modification = true;
-                break;
             }
             match entry.vn_sym {
                 VnLexiName::ar | VnLexiName::er | VnLexiName::or
                 | VnLexiName::oh | VnLexiName::uh | VnLexiName::ab
                 | VnLexiName::dd => {
                     has_modification = true;
-                    break;
                 }
                 _ => {}
             }
         }
 
         if !has_modification {
+            return false;
+        }
+
+        // Không restore khi từ chỉ toàn phụ âm (không có nguyên âm).
+        // Auto-restore chủ yếu để sửa tổ hợp nguyên âm/dấu thanh không hợp lệ.
+        // Cụm phụ âm như "đc" (được), "đk" (điều kiện) là viết tắt phổ biến
+        // trong tiếng Việt, không nên bị revert thành "ddc", "ddk".
+        if !has_vowel {
             return false;
         }
 
@@ -1543,10 +1611,10 @@ impl Engine {
         if self.current >= 0 && self.buf(self.current).v_offset >= 0 {
             let mut hook_ev = ev.clone();
             hook_ev.ev_type = KeyEvType::HookAll;
-            let ret = self.process_hook(hook_ev);
-            if ret {
-                return ret;
-            }
+            // Luôn trả về kết quả: nếu hook thành công → true,
+            // nếu không → process_append đã thêm 'w' vào buffer → false.
+            // Không được fall-through tạo 'ư' khi đã có nguyên âm.
+            return self.process_hook(hook_ev);
         }
 
         // Không có nguyên âm để móc — tạo 'ư' (Telex chuẩn)

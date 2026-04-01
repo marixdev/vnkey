@@ -56,11 +56,15 @@ pub extern "C" fn vnkey_process(
     out_len: usize,
     actual_len: *mut usize,
     backspaces: *mut usize,
+    backspaces_bytes: *mut usize,
 ) -> i32 {
     with_engine(|engine| {
         let result = engine.process(key_code);
         if !backspaces.is_null() {
             unsafe { *backspaces = result.backspaces; }
+        }
+        if !backspaces_bytes.is_null() {
+            unsafe { *backspaces_bytes = result.backspaces_bytes; }
         }
         if !actual_len.is_null() {
             let copy_len = result.output.len().min(out_len);
@@ -82,11 +86,15 @@ pub extern "C" fn vnkey_backspace(
     out_len: usize,
     actual_len: *mut usize,
     backspaces: *mut usize,
+    backspaces_bytes: *mut usize,
 ) -> i32 {
     with_engine(|engine| {
         let result = engine.process_backspace();
         if !backspaces.is_null() {
             unsafe { *backspaces = result.backspaces; }
+        }
+        if !backspaces_bytes.is_null() {
+            unsafe { *backspaces_bytes = result.backspaces_bytes; }
         }
         if !actual_len.is_null() {
             let copy_len = result.output.len().min(out_len);
@@ -209,6 +217,7 @@ pub unsafe extern "C" fn vnkey_engine_process(
     out_len: usize,
     actual_len: *mut usize,
     backspaces: *mut usize,
+    backspaces_bytes: *mut usize,
 ) -> i32 {
     if engine.is_null() {
         return 0;
@@ -217,6 +226,9 @@ pub unsafe extern "C" fn vnkey_engine_process(
     let result = engine.process(key_code);
     if !backspaces.is_null() {
         *backspaces = result.backspaces;
+    }
+    if !backspaces_bytes.is_null() {
+        *backspaces_bytes = result.backspaces_bytes;
     }
     if !actual_len.is_null() {
         let copy_len = result.output.len().min(out_len);
@@ -238,6 +250,7 @@ pub unsafe extern "C" fn vnkey_engine_backspace(
     out_len: usize,
     actual_len: *mut usize,
     backspaces: *mut usize,
+    backspaces_bytes: *mut usize,
 ) -> i32 {
     if engine.is_null() {
         return 0;
@@ -246,6 +259,9 @@ pub unsafe extern "C" fn vnkey_engine_backspace(
     let result = engine.process_backspace();
     if !backspaces.is_null() {
         *backspaces = result.backspaces;
+    }
+    if !backspaces_bytes.is_null() {
+        *backspaces_bytes = result.backspaces_bytes;
     }
     if !actual_len.is_null() {
         let copy_len = result.output.len().min(out_len);
@@ -463,4 +479,61 @@ pub unsafe extern "C" fn vnkey_charset_to_utf8(
         }
         Err(_) => -1,
     }
+}
+
+// ==================== App Charset (per-app charset mapping) ====================
+
+/// Nạp cấu hình app_charset từ chuỗi JSON.
+/// Ví dụ: {"wps.exe": 20, "myapp.exe": 23}
+/// # Safety
+/// `json` phải là chuỗi C hợp lệ kết thúc null.
+#[no_mangle]
+pub unsafe extern "C" fn vnkey_app_charset_from_json(json: *const c_char) {
+    if json.is_null() { return; }
+    let c_str = CStr::from_ptr(json);
+    if let Ok(s) = c_str.to_str() {
+        crate::app_charset::from_json(s);
+    }
+}
+
+/// Xuất cấu hình app_charset ra chuỗi JSON.
+/// Trả chuỗi malloc, caller phải giải phóng bằng vnkey_app_charset_free_string.
+#[no_mangle]
+pub extern "C" fn vnkey_app_charset_to_json() -> *mut c_char {
+    let json = crate::app_charset::to_json();
+    match std::ffi::CString::new(json) {
+        Ok(cs) => cs.into_raw(),
+        Err(_) => ptr::null_mut(),
+    }
+}
+
+/// Giải phóng chuỗi trả về từ vnkey_app_charset_to_json.
+/// # Safety
+/// `s` phải là con trỏ từ vnkey_app_charset_to_json, hoặc null.
+#[no_mangle]
+pub unsafe extern "C" fn vnkey_app_charset_free_string(s: *mut c_char) {
+    if !s.is_null() {
+        drop(std::ffi::CString::from_raw(s));
+    }
+}
+
+/// Cập nhật charset override cho app hiện tại.
+/// Truyền tên exe (lowercase, UTF-8, kết thúc null), hoặc null nếu không xác định.
+/// # Safety
+/// `exe_name` phải là chuỗi C hợp lệ kết thúc null, hoặc null.
+#[no_mangle]
+pub unsafe extern "C" fn vnkey_app_charset_update(exe_name: *const c_char) {
+    let name = if exe_name.is_null() {
+        None
+    } else {
+        CStr::from_ptr(exe_name).to_str().ok()
+    };
+    crate::app_charset::update_app_charset_for(name);
+}
+
+/// Lấy charset override cho app hiện tại.
+/// Trả charset_id nếu có override, -1 nếu dùng mặc định.
+#[no_mangle]
+pub extern "C" fn vnkey_app_charset_get_current() -> i32 {
+    crate::app_charset::get_current_app_charset().unwrap_or(-1)
 }

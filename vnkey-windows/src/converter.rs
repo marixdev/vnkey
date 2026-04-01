@@ -1,16 +1,14 @@
-//! Cửa sổ chuyển đổi bảng mã và chuyển mã clipboard.
+//! Cửa sổ chuyển đổi bảng mã — tao + wry.
+//! Chức năng chuyển mã clipboard (gọi từ WM_HOTKEY) vẫn giữ nguyên.
 
-use crate::ui;
+use crate::webview::{self, UiEvent};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{LazyLock, Mutex};
 
 use vnkey_engine::charset::Charset;
-use windows::core::*;
 use windows::Win32::Foundation::*;
-use windows::Win32::Graphics::Gdi::*;
 use windows::Win32::System::DataExchange::*;
 use windows::Win32::System::Memory::*;
-use windows::Win32::UI::WindowsAndMessaging::*;
 
 #[derive(Debug)]
 pub struct ConvSettings {
@@ -31,8 +29,6 @@ pub static CONV_SETTINGS: LazyLock<Mutex<ConvSettings>> =
 
 static CONV_OPEN: AtomicBool = AtomicBool::new(false);
 
-// ── Bảng mã ───────────────────────────────────────────────────────────
-
 const CS_IDS: [i32; 11] = [0, 1, 2, 3, 5, 10, 20, 21, 22, 40, 43];
 const CS_LABELS: [&str; 11] = [
     "Unicode", "UTF-8", "NCR Decimal", "NCR Hex", "CP-1258",
@@ -50,18 +46,7 @@ fn charset_from_id(id: i32) -> Charset {
     }
 }
 
-// ── Mã điều khiển ───────────────────────────────────────────────────────
-
-const ID_CB_FROM: u16     = 200;
-const ID_CB_TO: u16       = 201;
-const ID_BTN_SWAP: u16    = 202;
-const ID_EDIT_TEXT: u16   = 203;
-const ID_LBL_STATUS: u16 = 204;
-const ID_BTN_CONVERT: u16 = 205;
-const ID_BTN_CLIP: u16   = 206;
-const ID_BTN_CLOSE: u16  = 207;
-
-// ── Chuyển mã clipboard (gọi từ WM_HOTKEY chính) ───────────────────────────
+// ── Chuyển mã clipboard (gọi từ WM_HOTKEY) ──────────────────────────────
 
 pub fn convert_clipboard() {
     let (from_idx, to_idx) = {
@@ -78,18 +63,10 @@ pub fn convert_clipboard() {
     if let Some(text) = get_clipboard_text() {
         if let Some(converted) = do_convert(&text, from_cs, to_cs) {
             set_clipboard_text(&converted);
-            notify_conversion(from_name, to_name, true);
+            crate::osd::show(&format!("✔ Clipboard: {from_name} → {to_name}"));
         } else {
-            notify_conversion(from_name, to_name, false);
+            crate::osd::show(&format!("✘ Lỗi chuyển mã {from_name} → {to_name}"));
         }
-    }
-}
-
-fn notify_conversion(from: &str, to: &str, ok: bool) {
-    if ok {
-        crate::osd::show(&format!("✔ Clipboard: {from} → {to}"));
-    } else {
-        crate::osd::show(&format!("✘ Lỗi chuyển mã {from} → {to}"));
     }
 }
 
@@ -110,14 +87,13 @@ fn do_convert(text: &str, from: Charset, to: Charset) -> Option<String> {
             }
             Some(String::from_utf16_lossy(&u16buf))
         }
-        Charset::Utf8 | Charset::NcrDec | Charset::NcrHex | Charset::Viqr => {
-            String::from_utf8(result).ok()
-        }
+        Charset::Utf8 | Charset::NcrDec | Charset::NcrHex | Charset::Viqr =>
+            String::from_utf8(result).ok(),
         _ => Some(result.iter().map(|&b| b as char).collect()),
     }
 }
 
-// ── Trợ giúp clipboard ───────────────────────────────────────────────────
+// ── Clipboard helpers ────────────────────────────────────────────────────
 
 const CF_UNICODETEXT: u32 = 13;
 
@@ -159,160 +135,170 @@ fn set_clipboard_text(text: &str) {
     }
 }
 
-// ── Cửa sổ chuyển mã ──────────────────────────────────────────────────────
+// ── Cửa sổ WebView ──────────────────────────────────────────────────────
 
 pub fn open_converter_window() {
     if CONV_OPEN.swap(true, Ordering::SeqCst) { return; }
     std::thread::spawn(|| {
-        run_converter();
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_converter()));
+        if let Err(e) = r { eprintln!("[converter] panic: {e:?}"); }
         CONV_OPEN.store(false, Ordering::Relaxed);
     });
 }
 
-fn run_converter() {
-    ui::init_common_controls();
-
-    let hwnd = ui::create_dialog_window(
-        w!("VnKeyConverter"),
-        &format!("Chuyển mã – VnKey {}", crate::gui::VERSION),
-        440, 352,
-        Some(conv_wnd_proc),
-    );
-    if hwnd.0.is_null() { return; }
-    create_controls(hwnd);
-    ui::show_and_focus(hwnd);
-    ui::run_dialog_loop(hwnd);
-}
-
-fn create_controls(hwnd: HWND) {
-    let font = ui::create_ui_font();
+fn build_html() -> String {
     let (from_idx, to_idx) = {
         let s = CONV_SETTINGS.lock().unwrap_or_else(|e| e.into_inner());
         (s.from_charset, s.to_charset)
     };
 
-    // ── "Bảng mã" groupbox ──
-    ui::create_groupbox("Bảng mã", 10, 5, 420, 62, hwnd, 250, font);
+    let opts = |sel: usize| -> String {
+        CS_LABELS.iter().enumerate().map(|(i, n)|
+            if i == sel { format!(r#"<option value="{i}" selected>{n}</option>"#) }
+            else { format!(r#"<option value="{i}">{n}</option>"#) }
+        ).collect()
+    };
 
-    ui::create_label("Nguồn", 22, 22, 40, 16, hwnd, 251, font);
-    ui::create_combobox(22, 38, 160, 300, hwnd, ID_CB_FROM, font, &CS_LABELS, from_idx);
+    let body = format!(r##"
+<div class="container" style="height:100vh;display:flex;flex-direction:column">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:2px">
+    <div style="width:28px;height:28px;background:var(--accent);border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px">⇄</div>
+    <div style="font-weight:600;font-size:14px">Chuyển mã</div>
+  </div>
 
-    ui::create_button("⇄", 192, 36, 36, 24, hwnd, ID_BTN_SWAP, font);
+  <div style="display:flex;gap:8px;align-items:end">
+    <div class="group" style="flex:1">
+      <div class="group-title">Nguồn</div>
+      <select id="from" onchange="cmd({{cmd:'from',v:+this.value}})">{from_opts}</select>
+    </div>
+    <button onclick="cmd({{cmd:'swap'}})" title="Đổi chiều" style="margin-bottom:10px;font-size:16px;padding:6px 10px">⇄</button>
+    <div class="group" style="flex:1">
+      <div class="group-title">Đích</div>
+      <select id="to" onchange="cmd({{cmd:'to',v:+this.value}})">{to_opts}</select>
+    </div>
+  </div>
 
-    ui::create_label("Đích", 240, 22, 40, 16, hwnd, 252, font);
-    ui::create_combobox(240, 38, 178, 300, hwnd, ID_CB_TO, font, &CS_LABELS, to_idx);
+  <div class="group" style="flex:1;display:flex;flex-direction:column">
+    <div class="group-title">Văn bản</div>
+    <textarea id="text" style="flex:1;min-height:0;resize:none" placeholder="Nhập hoặc dán văn bản cần chuyển mã…"></textarea>
+  </div>
 
-    // ── "Nội dung" groupbox ──
-    ui::create_groupbox("Nội dung", 10, 72, 420, 230, hwnd, 253, font);
-    ui::create_textarea(22, 90, 396, 170, hwnd, ID_EDIT_TEXT, font);
-    ui::create_label("", 22, 265, 396, 18, hwnd, ID_LBL_STATUS, font);
+  <div style="display:flex;gap:8px">
+    <button class="primary full" onclick="cmd({{cmd:'conv_text',text:document.getElementById('text').value}})">Chuyển văn bản</button>
+    <button class="full" onclick="cmd({{cmd:'conv_clip'}})">Chuyển clipboard</button>
+    <button onclick="cmd({{cmd:'close'}})">Đóng</button>
+  </div>
 
-    // ── Các nút ──
-    ui::create_button("Chuyển mã", 10, 310, 140, 32, hwnd, ID_BTN_CONVERT, font);
-    ui::create_button("Chuyển clipboard", 155, 310, 140, 32, hwnd, ID_BTN_CLIP, font);
-    ui::create_button("Đóng", 300, 310, 130, 32, hwnd, ID_BTN_CLOSE, font);
+  <div id="status" class="status"></div>
+</div>
+"##,
+        from_opts = opts(from_idx),
+        to_opts = opts(to_idx),
+    );
+
+    webview::html(&body, "
+function setStatus(msg, ok) {
+    var el = document.getElementById('status');
+    el.textContent = msg;
+    el.className = 'status ' + (ok ? 'ok' : 'err');
+}
+function setText(t) { document.getElementById('text').value = t; }
+function setFrom(i) { document.getElementById('from').value = i; }
+function setTo(i) { document.getElementById('to').value = i; }
+")
 }
 
-unsafe extern "system" fn conv_wnd_proc(
-    hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM,
-) -> LRESULT {
-    match msg {
-        WM_COMMAND => {
-            let id = (wparam.0 & 0xFFFF) as u16;
-            let notify = ((wparam.0 >> 16) & 0xFFFF) as u16;
-            handle_command(hwnd, id, notify);
-            LRESULT(0)
-        }
-        WM_CTLCOLORSTATIC | WM_CTLCOLORBTN => {
-            let hdc = HDC(wparam.0 as _);
-            SetBkColor(hdc, ui::BG_COLOR);
-            SetTextColor(hdc, COLORREF(0x001A1A1A));
-            LRESULT(ui::BG_BRUSH().0 as _)
-        }
-        WM_CLOSE => { DestroyWindow(hwnd).ok(); LRESULT(0) }
-        WM_DESTROY => { PostQuitMessage(0); LRESULT(0) }
-        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
-    }
-}
-
-fn handle_command(hwnd: HWND, id: u16, notify: u16) {
-    match id {
-        ID_CB_FROM if notify == CBN_SELCHANGE as u16 => {
-            let cb = unsafe { GetDlgItem(hwnd, ID_CB_FROM as i32) }.unwrap_or_default();
-            let idx = unsafe { SendMessageW(cb, CB_GETCURSEL, WPARAM(0), LPARAM(0)) }.0 as usize;
-            if let Ok(mut s) = CONV_SETTINGS.lock() { s.from_charset = idx; }
+fn handle_ipc(body: &str, proxy: tao::event_loop::EventLoopProxy<UiEvent>) {
+    let msg: serde_json::Value = match serde_json::from_str(body) {
+        Ok(v) => v, Err(_) => return,
+    };
+    let cmd = msg["cmd"].as_str().unwrap_or("");
+    match cmd {
+        "from" => {
+            let v = msg["v"].as_i64().unwrap_or(0) as usize;
+            if let Ok(mut s) = CONV_SETTINGS.lock() { s.from_charset = v; }
             crate::config::save();
         }
-        ID_CB_TO if notify == CBN_SELCHANGE as u16 => {
-            let cb = unsafe { GetDlgItem(hwnd, ID_CB_TO as i32) }.unwrap_or_default();
-            let idx = unsafe { SendMessageW(cb, CB_GETCURSEL, WPARAM(0), LPARAM(0)) }.0 as usize;
-            if let Ok(mut s) = CONV_SETTINGS.lock() { s.to_charset = idx; }
+        "to" => {
+            let v = msg["v"].as_i64().unwrap_or(0) as usize;
+            if let Ok(mut s) = CONV_SETTINGS.lock() { s.to_charset = v; }
             crate::config::save();
         }
-        ID_BTN_SWAP => {
-            {
-                if let Ok(mut s) = CONV_SETTINGS.lock() {
-                    let tmp = s.from_charset;
-                    s.from_charset = s.to_charset;
-                    s.to_charset = tmp;
-                }
-            }
-            // Cập nhật combobox
+        "swap" => {
             let (f, t) = {
-                let s = CONV_SETTINGS.lock().unwrap_or_else(|e| e.into_inner());
-                (s.from_charset, s.to_charset)
+                let mut s = CONV_SETTINGS.lock().unwrap_or_else(|e| e.into_inner());
+                let f = s.from_charset;
+                let t = s.to_charset;
+                s.from_charset = t;
+                s.to_charset = f;
+                (t, f)
             };
-            unsafe {
-                let cb_from = GetDlgItem(hwnd, ID_CB_FROM as i32).unwrap_or_default();
-                let cb_to = GetDlgItem(hwnd, ID_CB_TO as i32).unwrap_or_default();
-                SendMessageW(cb_from, CB_SETCURSEL, WPARAM(f), LPARAM(0));
-                SendMessageW(cb_to, CB_SETCURSEL, WPARAM(t), LPARAM(0));
-            }
             crate::config::save();
+            let _ = proxy.send_event(UiEvent::Eval(
+                format!("setFrom({});setTo({})", f, t)));
         }
-        ID_BTN_CONVERT => {
-            let edit = unsafe { GetDlgItem(hwnd, ID_EDIT_TEXT as i32) }.unwrap_or_default();
-            let text = ui::get_edit_text(edit);
+        "conv_text" => {
+            let text = msg["text"].as_str().unwrap_or("");
             if text.is_empty() {
-                set_status(hwnd, "Chưa có nội dung");
+                let _ = proxy.send_event(UiEvent::Eval("setStatus('Chưa nhập văn bản',false)".into()));
                 return;
             }
             let (from_idx, to_idx) = {
-                let cb_from = unsafe { GetDlgItem(hwnd, ID_CB_FROM as i32) }.unwrap_or_default();
-                let cb_to = unsafe { GetDlgItem(hwnd, ID_CB_TO as i32) }.unwrap_or_default();
-                (
-                    unsafe { SendMessageW(cb_from, CB_GETCURSEL, WPARAM(0), LPARAM(0)) }.0 as usize,
-                    unsafe { SendMessageW(cb_to, CB_GETCURSEL, WPARAM(0), LPARAM(0)) }.0 as usize,
-                )
+                let s = CONV_SETTINGS.lock().unwrap_or_else(|e| e.into_inner());
+                (s.from_charset, s.to_charset)
             };
-            if from_idx == to_idx {
-                set_status(hwnd, "Nguồn và đích giống nhau");
-                return;
-            }
             let from_id = CS_IDS.get(from_idx).copied().unwrap_or(0);
             let to_id = CS_IDS.get(to_idx).copied().unwrap_or(0);
-            let from_cs = charset_from_id(from_id);
-            let to_cs = charset_from_id(to_id);
-            match do_convert(&text, from_cs, to_cs) {
+            if from_id == to_id {
+                let _ = proxy.send_event(UiEvent::Eval("setStatus('Bảng mã nguồn và đích giống nhau',false)".into()));
+                return;
+            }
+            match do_convert(text, charset_from_id(from_id), charset_from_id(to_id)) {
                 Some(result) => {
-                    ui::set_window_text(edit, &result);
-                    set_status(hwnd, "Chuyển thành công!");
+                    let escaped = result.replace('\\', "\\\\").replace('\'', "\\'").replace('\n', "\\n").replace('\r', "");
+                    let from_n = CS_LABELS.get(from_idx).unwrap_or(&"?");
+                    let to_n = CS_LABELS.get(to_idx).unwrap_or(&"?");
+                    let _ = proxy.send_event(UiEvent::Eval(format!(
+                        "setText('{}');setStatus('✔ Đã chuyển {} → {}',true)", escaped, from_n, to_n)));
                 }
                 None => {
-                    set_status(hwnd, "Lỗi chuyển mã. Vui lòng kiểm tra lại bảng mã nguồn.");
+                    let _ = proxy.send_event(UiEvent::Eval("setStatus('✘ Lỗi chuyển mã',false)".into()));
                 }
             }
         }
-        ID_BTN_CLIP => {
-            convert_clipboard();
-            set_status(hwnd, "Đã chuyển mã clipboard.");
+        "conv_clip" => {
+            let (from_idx, to_idx) = {
+                let s = CONV_SETTINGS.lock().unwrap_or_else(|e| e.into_inner());
+                (s.from_charset, s.to_charset)
+            };
+            let from_id = CS_IDS.get(from_idx).copied().unwrap_or(0);
+            let to_id = CS_IDS.get(to_idx).copied().unwrap_or(0);
+            if from_id == to_id {
+                let _ = proxy.send_event(UiEvent::Eval("setStatus('Bảng mã nguồn và đích giống nhau',false)".into()));
+                return;
+            }
+            match get_clipboard_text() {
+                Some(text) => {
+                    match do_convert(&text, charset_from_id(from_id), charset_from_id(to_id)) {
+                        Some(result) => {
+                            set_clipboard_text(&result);
+                            let f = CS_LABELS.get(from_idx).unwrap_or(&"?");
+                            let t = CS_LABELS.get(to_idx).unwrap_or(&"?");
+                            let _ = proxy.send_event(UiEvent::Eval(format!(
+                                "setStatus('✔ Clipboard: {} → {}',true)", f, t)));
+                        }
+                        None => { let _ = proxy.send_event(UiEvent::Eval("setStatus('✘ Lỗi chuyển mã clipboard',false)".into())); }
+                    }
+                }
+                None => { let _ = proxy.send_event(UiEvent::Eval("setStatus('✘ Clipboard trống',false)".into())); }
+            }
         }
-        ID_BTN_CLOSE => { unsafe { DestroyWindow(hwnd).ok(); } }
+        "close" => { let _ = proxy.send_event(UiEvent::Close); }
         _ => {}
     }
 }
 
-fn set_status(hwnd: HWND, text: &str) {
-    let lbl = unsafe { GetDlgItem(hwnd, ID_LBL_STATUS as i32) }.unwrap_or_default();
-    ui::set_window_text(lbl, text);
+fn run_converter() {
+    let html = build_html();
+    webview::run_webview("Chuyển mã – VnKey", 500.0, 440.0, &html, handle_ipc);
 }
