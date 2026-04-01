@@ -39,6 +39,8 @@ pub fn is_sending() -> bool {
 const VK_BACK_APPS: &[&str] = &[
     "wps.exe", "wpp.exe", "et.exe",     // WPS Office
     "WINWORD.EXE", "EXCEL.EXE", "POWERPNT.EXE", // MS Office
+    // Trình duyệt Firefox-based: Shift+Left không hoạt động trên thanh tìm kiếm/địa chỉ
+    "librewolf.exe", "waterfox.exe", "mullvad-browser.exe",
 ];
 
 /// Console apps: cần VK_BACK + WriteConsoleInputW cho Unicode text.

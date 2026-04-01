@@ -29,6 +29,7 @@
 - Dọn dẹp file không sử dụng (file Slint cũ, backup, SVG rời)
 - Sửa Ctrl+Shift+N/V kích hoạt chuyển ngôn ngữ — defer toggle đến keyup, huỷ nếu có phím khác xen giữa (#15)
 - Sửa xung đột với Kanata (keyboard remapping) — phím không xử lý dùng `CallNextHookEx` thay vì block + reinject qua `SendInput` (#13)
+- Sửa gõ tiếng Việt trên thanh tìm kiếm/địa chỉ của LibreWolf, Waterfox, Mullvad Browser — thêm vào danh sách VK_BACK (Shift+Left không hoạt động trên các trình duyệt Firefox-based)
 
 ### vnkey-fcitx5
 - **Chuyển sang chế độ commit trực tiếp** (không dùng preedit/gạch chân) — sửa lỗi hiển thị sai trên nhiều ứng dụng GTK/Qt
