@@ -251,6 +251,13 @@ mod tests {
         assert_eq!(type_word(&mut engine, "flex"), "flex");
         // 'j' is nặng — "projec" not valid Vietnamese
         assert_eq!(type_word(&mut engine, "project"), "project");
+        // 'w' should not produce 'ư' in non-Vietnamese context
+        assert_eq!(type_word(&mut engine, "windows"), "windows");
+        assert_eq!(type_word(&mut engine, "power"), "power");
+        assert_eq!(type_word(&mut engine, "software"), "software");
+        assert_eq!(type_word(&mut engine, "workflow"), "workflow");
+        // ww cancels standalone ư → 'w', third w appends → "ww" (Telex double-key cancel)
+        assert_eq!(type_word(&mut engine, "www"), "ww");
     }
 
     #[test]
@@ -451,5 +458,22 @@ mod tests {
     fn test_all_charsets_listed() {
         let all = Charset::all();
         assert_eq!(all.len(), 19);
+    }
+
+    #[test]
+    fn test_telex_w_non_vn_guard() {
+        let mut engine = Engine::new();
+        engine.set_input_method(InputMethod::Telex);
+
+        // "windows": ưin triggers auto_non_vn_restore → "win", then NonVn guard
+        // prevents subsequent 'w' from creating standalone ư
+        assert_eq!(type_word(&mut engine, "windows"), "windows");
+
+        // "how" → "hơ" is CORRECT Telex: ow hooks o→ơ, and "hơ" is valid Vietnamese
+        assert_eq!(type_word(&mut engine, "how"), "hơ");
+        // "now" → "nơ" (valid Vietnamese = where)
+        assert_eq!(type_word(&mut engine, "now"), "nơ");
+        // "cow" → "cơ" (valid Vietnamese = rice/opportunity)
+        assert_eq!(type_word(&mut engine, "cow"), "cơ");
     }
 }

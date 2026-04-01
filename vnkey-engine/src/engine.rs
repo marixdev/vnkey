@@ -1602,6 +1602,7 @@ impl Engine {
             self.buffer[self.current as usize].form = WordForm::NonVn;
             self.buffer[self.current as usize].vn_sym = VnLexiName::NonVnChar;
             self.buffer[self.current as usize].key_code = b'w' as u32;
+            self.buffer[self.current as usize].v_offset = -1;
             self.single_mode = false;
             self.reverted = true;
             return true;
@@ -1615,6 +1616,14 @@ impl Engine {
             // nếu không → process_append đã thêm 'w' vào buffer → false.
             // Không được fall-through tạo 'ư' khi đã có nguyên âm.
             return self.process_hook(hook_ev);
+        }
+
+        // Nếu từ hiện tại đã bị revert về NonVn (auto_non_vn_restore),
+        // không tạo standalone ư — pass through 'w' nguyên bản.
+        // Ví dụ: "windows" — sau khi "ưin" bị restore thành "win",
+        // tiếp tục gõ "dow" rồi 'w' phải là 'w' chứ không phải 'ư'.
+        if self.current >= 0 && self.buf(self.current).form == WordForm::NonVn {
+            return self.process_append(ev);
         }
 
         // Không có nguyên âm để móc — tạo 'ư' (Telex chuẩn)

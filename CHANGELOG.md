@@ -11,6 +11,7 @@
 - Sửa thứ tự `VS_UY` trong `VC_PAIR_LIST` (vnlexi)
 - Sửa test `test_telex_w_standalone` fail trên NixOS — cập nhật kỳ vọng: `w` → `ư`, `ww` → `w` đúng theo Telex chuẩn (#14)
 - Cải thiện `process_telex_w`: khi đã có nguyên âm, luôn trả kết quả `process_hook` thay vì fall-through tạo `ư` sai (#14)
+- Sửa `process_telex_w`: thêm NonVn guard — sau khi `auto_non_vn_restore` revert từ về NonVn, phím `w` tiếp theo không tạo `ư` mà pass-through (ví dụ: "windows" không còn bị thành "windoư")
 - Cập nhật FFI: `vnkey_process`, `vnkey_backspace`, `vnkey_engine_process`, `vnkey_engine_backspace` thêm tham số `backspaces_bytes`
 
 ### vnkey-windows

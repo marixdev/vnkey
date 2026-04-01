@@ -94,6 +94,7 @@ impl VnLexiName {
     }
 
     pub fn is_vowel(self) -> bool {
+        if self == NonVnChar { return false; }
         IS_VN_VOWEL[self as usize + 1] // +1 vì NonVnChar = -1
     }
 }
