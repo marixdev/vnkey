@@ -41,6 +41,7 @@
 - Thêm `Enabled=True`, `OnDemand=True` trong addon.conf
 - postinst: tự động restart fcitx5 sau cài đặt (`fcitx5-remote -r`)
 - Thêm glibc compat stubs: `pidfd_getpid`, `pidfd_spawnp` (GLIBC_2.39) cho tương thích glibc cũ
+- Cập nhật icon: dùng icon mới thống nhất với Windows (chữ V nền xanh #0067C0)
 
 ### vnkey-ibus
 - **Chuyển sang chế độ commit trực tiếp** (không dùng preedit/gạch chân) — sửa lỗi hiển thị sai trên nhiều ứng dụng GTK
@@ -48,9 +49,9 @@
 - Thêm `direct_commit()`: commit trực tiếp với chuyển mã bảng mã đích + per-app charset override
 - Hỗ trợ per-app charset: phát hiện app bằng `xdotool getactivewindow getwindowpid` + `/proc/PID/exe`, áp dụng bảng mã riêng
 - Lưu/nạp `app_charsets` trong config JSON
-
-### vnkey-macos
+- Cập nhật icon: dùng icon mới thống nhất với Windows (chữ V nền xanh #0067C0)
 - Cập nhật FFI header: thêm tham số `backspaces_bytes` (truyền NULL — macOS dùng UTF-8)
+- Thêm icon VnKey.png + tự động tạo VnKey.icns khi build (thiết kế thống nhất với Windows)
 
 ---
 

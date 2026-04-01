@@ -26,8 +26,33 @@ build_engine() {
     (cd "$ENGINE_DIR" && cargo build --release --target "$target")
 }
 
+build_icon() {
+    local icns="resources/VnKey.icns"
+    local png="resources/VnKey.png"
+    if [[ -f "$icns" ]]; then
+        return
+    fi
+    if ! command -v sips &>/dev/null || ! command -v iconutil &>/dev/null; then
+        echo "WARN: sips/iconutil not available, skipping .icns generation"
+        return
+    fi
+    echo "==> Generate VnKey.icns from PNG..."
+    local iconset="$BUILD_DIR/VnKey.iconset"
+    mkdir -p "$iconset"
+    for size in 16 32 128 256 512; do
+        sips -z $size $size "$png" --out "$iconset/icon_${size}x${size}.png" >/dev/null
+        local double=$((size * 2))
+        if [[ $double -le 1024 ]]; then
+            sips -z $double $double "$png" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+        fi
+    done
+    iconutil -c icns -o "$icns" "$iconset"
+    rm -rf "$iconset"
+}
+
 build_app() {
     echo "==> Build VnKey.app..."
+    build_icon
     cmake -B "$BUILD_DIR" -DCMAKE_BUILD_TYPE=Release
     cmake --build "$BUILD_DIR" --config Release
 }
