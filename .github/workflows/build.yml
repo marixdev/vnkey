@@ -564,7 +564,7 @@ jobs:
           PKGVER="${GITHUB_REF_NAME#v}"
           ARTIFACT_FILE="${{ matrix.artifact_prefix }}-v${PKGVER}-1-x86_64.pkg.tar.zst"
           SHA256=$(curl -fsSL \
-            "https://github.com/marixdev/vnkey/releases/download/v${PKGVER}/SHA256SUMS.txt" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/v${PKGVER}/SHA256SUMS.txt" \
             | grep "${ARTIFACT_FILE}" | awk '{print $1}')
           if [ -z "$SHA256" ]; then
             echo "::error::Failed to extract SHA256 for ${ARTIFACT_FILE}"
