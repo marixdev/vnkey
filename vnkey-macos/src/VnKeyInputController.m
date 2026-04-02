@@ -20,6 +20,8 @@ static NSString *const kVnKeyFreeMarking   = @"VnKeyFreeMarking";
 static NSString *const kVnKeyModernStyle   = @"VnKeyModernStyle";
 static NSString *const kVnKeyAutoRestore   = @"VnKeyAutoRestore";
 static NSString *const kVnKeyEdeMode       = @"VnKeyEdeMode";
+static NSString *const kVnKeyMacroEnabled   = @"VnKeyMacroEnabled";
+static NSString *const kVnKeyMacros         = @"VnKeyMacros";
 
 /* ==================== Helpers ==================== */
 
@@ -36,6 +38,8 @@ static void loadPreferences(void *engine, BOOL *outVietMode) {
         kVnKeyModernStyle: @YES,
         kVnKeyAutoRestore: @YES,
         kVnKeyEdeMode:     @NO,
+        kVnKeyMacroEnabled:@NO,
+        kVnKeyMacros:      @"",
     };
     [defaults registerDefaults:defaultValues];
 
@@ -46,11 +50,20 @@ static void loadPreferences(void *engine, BOOL *outVietMode) {
     BOOL modern = [defaults boolForKey:kVnKeyModernStyle];
     BOOL autoRestore = [defaults boolForKey:kVnKeyAutoRestore];
     BOOL ede = [defaults boolForKey:kVnKeyEdeMode];
+    BOOL macroEn = [defaults boolForKey:kVnKeyMacroEnabled];
 
     vnkey_engine_set_input_method(engine, im);
     vnkey_engine_set_viet_mode(engine, viet ? 1 : 0);
     vnkey_engine_set_options(engine, free ? 1 : 0, modern ? 1 : 0,
-                            spell ? 1 : 0, autoRestore ? 1 : 0, ede ? 1 : 0);
+                            spell ? 1 : 0, autoRestore ? 1 : 0, ede ? 1 : 0,
+                            macroEn ? 1 : 0);
+
+    /* Nạp macros */
+    NSString *macros = [defaults stringForKey:kVnKeyMacros];
+    if (macros && macros.length > 0) {
+        vnkey_engine_load_macros(engine, [macros UTF8String]);
+    }
+
     if (outVietMode) *outVietMode = viet;
 }
 

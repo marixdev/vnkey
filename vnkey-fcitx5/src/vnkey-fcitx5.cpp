@@ -119,6 +119,27 @@ void VnKeyEngine::loadConfig() {
     freeMarking_   = jsonGetBool(json, "free_marking", true);
     modernStyle_   = jsonGetBool(json, "modern_style", true);
     edeMode_       = jsonGetBool(json, "ede_mode", false);
+    macroEnabled_  = jsonGetBool(json, "macro_enabled", false);
+
+    /* Nạp macros (tab-separated text, one entry per line) */
+    macroText_ = jsonGet(json, "macros");
+    /* Remove leading/trailing quotes if present */
+    if (macroText_.size() >= 2 && macroText_.front() == '"' && macroText_.back() == '"') {
+        macroText_ = macroText_.substr(1, macroText_.size() - 2);
+    }
+    /* Unescape \\n to newline, \\t to tab */
+    {
+        std::string unesc;
+        for (size_t i = 0; i < macroText_.size(); i++) {
+            if (macroText_[i] == '\\' && i + 1 < macroText_.size()) {
+                if (macroText_[i+1] == 'n') { unesc.push_back('\n'); i++; continue; }
+                if (macroText_[i+1] == 't') { unesc.push_back('\t'); i++; continue; }
+                if (macroText_[i+1] == '\\') { unesc.push_back('\\'); i++; continue; }
+            }
+            unesc.push_back(macroText_[i]);
+        }
+        macroText_ = unesc;
+    }
 
     /* Nạp app_charsets */
     auto acJson = jsonGetObject(json, "app_charsets");
@@ -146,7 +167,22 @@ void VnKeyEngine::saveConfig() {
       << "  \"free_marking\": " << (freeMarking_ ? "true" : "false") << ",\n"
       << "  \"modern_style\": " << (modernStyle_ ? "true" : "false") << ",\n"
       << "  \"ede_mode\": " << (edeMode_ ? "true" : "false") << ",\n"
-      << "  \"app_charsets\": " << acStr << "\n"
+      << "  \"macro_enabled\": " << (macroEnabled_ ? "true" : "false") << ",\n";
+
+    /* Escape macroText_ for JSON string */
+    if (!macroText_.empty()) {
+        f << "  \"macros\": \"";
+        for (char c : macroText_) {
+            if (c == '\n') f << "\\n";
+            else if (c == '\t') f << "\\t";
+            else if (c == '\\') f << "\\\\";
+            else if (c == '"') f << "\\\"";
+            else f << c;
+        }
+        f << "\",\n";
+    }
+
+    f << "  \"app_charsets\": " << acStr << "\n"
       << "}\n";
 }
 
@@ -319,6 +355,23 @@ void VnKeyEngine::setupMenu() {
         });
     uiManager.registerAction("vnkey-ede", edeAction_.get());
 
+    /* ---- Toggle: Macro (gõ tắt) ---- */
+    macroAction_ = std::make_unique<SimpleAction>();
+    macroAction_->setCheckable(true);
+    macroAction_->setChecked(macroEnabled_);
+    macroAction_->setShortText(macroEnabled_
+        ? "G\xc3\xb5 t\xe1\xba\xaft (ON)"
+        : "G\xc3\xb5 t\xe1\xba\xaft (OFF)");
+    macroAction_->connect<SimpleAction::Activated>(
+        [this](InputContext *ic) {
+            macroEnabled_ = !macroEnabled_;
+            updateMacroAction(ic);
+            settingsGen_++;
+            saveConfig();
+            syncActiveIC(ic);
+        });
+    uiManager.registerAction("vnkey-macro", macroAction_.get());
+
     /* ---- Clipboard conversion (non-checkable) ---- */
     clipToUniAction_ = std::make_unique<SimpleAction>();
     clipToUniAction_->setShortText("[CS] \xe2\x86\x92 Unicode (clipboard)");
@@ -413,6 +466,14 @@ void VnKeyEngine::updateEdeAction(InputContext *ic) {
     edeAction_->update(ic);
 }
 
+void VnKeyEngine::updateMacroAction(InputContext *ic) {
+    macroAction_->setChecked(macroEnabled_);
+    macroAction_->setShortText(macroEnabled_
+        ? "G\xc3\xb5 t\xe1\xba\xaft (ON)"
+        : "G\xc3\xb5 t\xe1\xba\xaft (OFF)");
+    macroAction_->update(ic);
+}
+
 void VnKeyEngine::updateClipLabels() {
     const char *csName = "Unicode (UTF-8)";
     for (size_t i = 0; i < CS_COUNT; i++) {
@@ -434,6 +495,7 @@ void VnKeyEngine::updateUI(InputContext *ic) {
     updateFreeAction(ic);
     updateModernAction(ic);
     updateEdeAction(ic);
+    updateMacroAction(ic);
 }
 
 void VnKeyEngine::activate(const InputMethodEntry & /*entry*/,
@@ -446,6 +508,7 @@ void VnKeyEngine::activate(const InputMethodEntry & /*entry*/,
     sa.addAction(StatusGroup::InputMethod, freeAction_.get());
     sa.addAction(StatusGroup::InputMethod, modernAction_.get());
     sa.addAction(StatusGroup::InputMethod, edeAction_.get());
+    sa.addAction(StatusGroup::InputMethod, macroAction_.get());
     sa.addAction(StatusGroup::InputMethod, clipToUniAction_.get());
     sa.addAction(StatusGroup::InputMethod, clipFromUniAction_.get());
     updateUI(ic);
@@ -506,7 +569,13 @@ void VnKeyState::syncSettings() {
         engine_->modernStyle() ? 1 : 0,
         engine_->spellCheck() ? 1 : 0,
         1 /* auto_restore */,
-        engine_->edeMode() ? 1 : 0);
+        engine_->edeMode() ? 1 : 0,
+        engine_->macroEnabled() ? 1 : 0);
+    /* Nạp macros vào engine instance */
+    const auto &mt = engine_->macroText();
+    if (!mt.empty()) {
+        vnkey_engine_load_macros(vnkeyEngine_, mt.c_str());
+    }
 }
 
 void VnKeyState::activate() {

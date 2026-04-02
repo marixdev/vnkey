@@ -100,6 +100,84 @@ impl MacroTable {
             }
         }
     }
+
+    /// Xuất tất cả macro thành văn bản. Định dạng: mỗi dòng "key\tvalue"
+    pub fn to_text(&self) -> String {
+        let mut result = String::new();
+        for entry in &self.entries {
+            result.push_str(&entry.key);
+            result.push('\t');
+            result.push_str(&entry.value);
+            result.push('\n');
+        }
+        result
+    }
+
+    /// Trả danh sách tất cả macro dưới dạng JSON array.
+    /// Định dạng: [{"key":"bc","value":"báo cáo"}, ...]
+    pub fn to_json(&self) -> String {
+        let mut result = String::from("[");
+        for (i, entry) in self.entries.iter().enumerate() {
+            if i > 0 {
+                result.push(',');
+            }
+            result.push_str("{\"key\":\"");
+            for ch in entry.key.chars() {
+                match ch {
+                    '"' => result.push_str("\\\""),
+                    '\\' => result.push_str("\\\\"),
+                    '\n' => result.push_str("\\n"),
+                    _ => result.push(ch),
+                }
+            }
+            result.push_str("\",\"value\":\"");
+            for ch in entry.value.chars() {
+                match ch {
+                    '"' => result.push_str("\\\""),
+                    '\\' => result.push_str("\\\\"),
+                    '\n' => result.push_str("\\n"),
+                    _ => result.push(ch),
+                }
+            }
+            result.push_str("\"}");
+        }
+        result.push(']');
+        result
+    }
+
+    /// Tải macro từ JSON array: [{"key":"bc","value":"báo cáo"}, ...]
+    pub fn load_from_json(&mut self, json: &str) {
+        self.clear();
+        // Trích xuất từng object {key, value} đơn giản
+        let mut pos = 0;
+        let bytes = json.as_bytes();
+        while pos < bytes.len() {
+            // Tìm "key":"
+            if let Some(k_start) = json[pos..].find("\"key\":\"") {
+                let k_start = pos + k_start + 7; // bỏ "key":"
+                if let Some(k_end) = json[k_start..].find('"') {
+                    let key = &json[k_start..k_start + k_end];
+                    let after_key = k_start + k_end;
+                    // Tìm "value":"
+                    if let Some(v_start) = json[after_key..].find("\"value\":\"") {
+                        let v_start = after_key + v_start + 9;
+                        if let Some(v_end) = json[v_start..].find('"') {
+                            let value = &json[v_start..v_start + v_end];
+                            if !key.is_empty() && !value.is_empty() {
+                                // Unescape
+                                let key = key.replace("\\\"", "\"").replace("\\n", "\n").replace("\\\\", "\\");
+                                let value = value.replace("\\\"", "\"").replace("\\n", "\n").replace("\\\\", "\\");
+                                self.add(&key, &value);
+                            }
+                            pos = v_start + v_end + 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+            break;
+        }
+    }
 }
 
 impl Default for MacroTable {

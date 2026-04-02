@@ -62,6 +62,7 @@ typedef struct {
     int  free_marking;
     int  modern_style;
     int  ede_mode;
+    int  macro_enabled;
 } VnKeyConfig;
 
 static VnKeyConfig g_config = {
@@ -71,7 +72,11 @@ static VnKeyConfig g_config = {
     .free_marking   = 1,
     .modern_style   = 1,
     .ede_mode       = 0,
+    .macro_enabled  = 0,
 };
+
+/* Bảng macro text (tab-separated, mỗi dòng key\tvalue) */
+static char g_macro_text[16384] = "";
 
 /* ==================== Lưu trữ cấu hình ==================== */
 
@@ -137,6 +142,38 @@ static int json_get_bool(const char *json, const char *key, int def) {
     return def;
 }
 
+/* Trích xuất JSON string con: "key": "value..."
+ * Unescape \n, \t, \\, \". Trả 1 nếu tìm thấy, 0 nếu không. */
+static int json_get_string(const char *json, const char *key,
+                           char *buf, size_t buflen) {
+    char needle[256];
+    snprintf(needle, sizeof(needle), "\"%s\"", key);
+    const char *pos = strstr(json, needle);
+    if (!pos) return 0;
+    pos = strchr(pos + strlen(needle), ':');
+    if (!pos) return 0;
+    pos++;
+    while (*pos == ' ' || *pos == '\t') pos++;
+    if (*pos != '"') return 0;
+    pos++; /* skip opening quote */
+    size_t i = 0;
+    while (*pos && *pos != '"' && i < buflen - 1) {
+        if (*pos == '\\' && *(pos + 1)) {
+            switch (*(pos + 1)) {
+                case 'n':  buf[i++] = '\n'; pos += 2; break;
+                case 't':  buf[i++] = '\t'; pos += 2; break;
+                case '\\': buf[i++] = '\\'; pos += 2; break;
+                case '"':  buf[i++] = '"';  pos += 2; break;
+                default:   buf[i++] = *pos++; break;
+            }
+        } else {
+            buf[i++] = *pos++;
+        }
+    }
+    buf[i] = '\0';
+    return 1;
+}
+
 /* Trích xuất JSON object con: "key": { ... }
  * Trả con trỏ tới chuỗi malloc (cần g_free), hoặc NULL */
 static char *json_get_object(const char *json, const char *key) {
@@ -176,6 +213,10 @@ static void load_config(void) {
     g_config.free_marking   = json_get_bool(contents, "free_marking", 1);
     g_config.modern_style   = json_get_bool(contents, "modern_style", 1);
     g_config.ede_mode       = json_get_bool(contents, "ede_mode", 0);
+    g_config.macro_enabled  = json_get_bool(contents, "macro_enabled", 0);
+
+    /* Nạp macros */
+    json_get_string(contents, "macros", g_macro_text, sizeof(g_macro_text));
 
     /* Nạp app_charsets */
     char *ac_json = json_get_object(contents, "app_charsets");
@@ -197,26 +238,40 @@ static void save_config(void) {
     char *ac_json = vnkey_app_charset_to_json();
     const char *ac_str = ac_json ? ac_json : "{}";
 
-    char buf[4096];
-    snprintf(buf, sizeof(buf),
-        "{\n"
+    GString *gs = g_string_new("{\n");
+    g_string_append_printf(gs,
         "  \"input_method\": %d,\n"
         "  \"output_charset\": %d,\n"
         "  \"spell_check\": %s,\n"
         "  \"free_marking\": %s,\n"
         "  \"modern_style\": %s,\n"
         "  \"ede_mode\": %s,\n"
-        "  \"app_charsets\": %s\n"
-        "}\n",
+        "  \"macro_enabled\": %s,\n",
         g_config.input_method,
         g_config.output_charset,
         g_config.spell_check ? "true" : "false",
         g_config.free_marking ? "true" : "false",
         g_config.modern_style ? "true" : "false",
         g_config.ede_mode ? "true" : "false",
-        ac_str
+        g_config.macro_enabled ? "true" : "false"
     );
-    g_file_set_contents(path, buf, -1, NULL);
+
+    /* Escape and write macros */
+    if (g_macro_text[0]) {
+        g_string_append(gs, "  \"macros\": \"");
+        for (const char *p = g_macro_text; *p; p++) {
+            if (*p == '\n') g_string_append(gs, "\\n");
+            else if (*p == '\t') g_string_append(gs, "\\t");
+            else if (*p == '\\') g_string_append(gs, "\\\\");
+            else if (*p == '"') g_string_append(gs, "\\\"");
+            else g_string_append_c(gs, *p);
+        }
+        g_string_append(gs, "\",\n");
+    }
+
+    g_string_append_printf(gs, "  \"app_charsets\": %s\n}\n", ac_str);
+    g_file_set_contents(path, gs->str, -1, NULL);
+    g_string_free(gs, TRUE);
     g_free(path);
 
     if (ac_json) vnkey_app_charset_free_string(ac_json);
@@ -463,7 +518,12 @@ static void sync_settings(VnkIBusEngine *self) {
         g_config.modern_style,
         g_config.spell_check,
         1 /* auto_restore */,
-        g_config.ede_mode);
+        g_config.ede_mode,
+        g_config.macro_enabled);
+    /* Nạp macros vào engine */
+    if (g_macro_text[0]) {
+        vnkey_engine_load_macros(self->engine, g_macro_text);
+    }
 }
 
 static void clear_preedit(VnkIBusEngine *self) {
@@ -667,6 +727,15 @@ static IBusPropList *build_prop_list(void) {
         NULL);
     ibus_prop_list_append(props, ede_prop);
 
+    IBusText *macro_label = ibus_text_new_from_string(
+        "G\xc3\xb5 t\xe1\xba\xaft (Auto-text)");
+    IBusProperty *macro_prop = ibus_property_new(
+        "opt-macro", PROP_TYPE_TOGGLE, macro_label, NULL, NULL,
+        TRUE, TRUE,
+        g_config.macro_enabled ? PROP_STATE_CHECKED : PROP_STATE_UNCHECKED,
+        NULL);
+    ibus_prop_list_append(props, macro_prop);
+
     /* Thao tác chuyển mã clipboard */
     const char *cs_name = "Unicode (UTF-8)";
     for (int i = 0; i < CS_COUNT; i++) {
@@ -849,6 +918,11 @@ static void vnk_ibus_engine_property_activate(IBusEngine *engine,
     }
     else if (strcmp(prop_name, "opt-ede") == 0) {
         g_config.ede_mode = !g_config.ede_mode;
+        sync_settings(self);
+        save_config();
+    }
+    else if (strcmp(prop_name, "opt-macro") == 0) {
+        g_config.macro_enabled = !g_config.macro_enabled;
         sync_settings(self);
         save_config();
     }

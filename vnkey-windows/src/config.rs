@@ -55,6 +55,16 @@ pub fn load() {
             if let Some(v) = get_bool(&vals, "ede_mode") {
                 state.ede_mode = v;
             }
+            if let Some(v) = get_bool(&vals, "macro_enabled") {
+                state.macro_enabled = v;
+            }
+            // Tải macro entries
+            for (k, v) in &vals {
+                if k == "macros" {
+                    state.engine.macro_table.load_from_json(v);
+                    break;
+                }
+            }
             state.sync_options();
         }
     }
@@ -197,7 +207,7 @@ fn do_save() {
     };
 
     // Đọc trạng thái engine hiện tại
-    let (im, cs, vm, spell, free, modern, ede) = {
+    let (im, cs, vm, spell, free, modern, ede, macro_en, macros_json) = {
         match crate::ENGINE.lock() {
             Ok(guard) => match guard.as_ref() {
                 Some(s) => (
@@ -208,6 +218,8 @@ fn do_save() {
                     s.free_marking,
                     s.modern_style,
                     s.ede_mode,
+                    s.macro_enabled,
+                    s.engine.macro_table.to_json(),
                 ),
                 None => return,
             },
@@ -272,6 +284,8 @@ fn do_save() {
          \x20 \"free_marking\": {free},\n\
          \x20 \"modern_style\": {modern},\n\
          \x20 \"ede_mode\": {ede},\n\
+         \x20 \"macro_enabled\": {macro_en},\n\
+         \x20 \"macros\": {macros_json},\n\
          \x20 \"run_as_admin\": {run_as_admin},\n\
          \x20 \"conv_from\": {conv_from},\n\
          \x20 \"conv_to\": {conv_to},\n\

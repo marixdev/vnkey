@@ -5,7 +5,7 @@
 //! - Singleton toàn cục (vnkey_setup/vnkey_process/...) cho dùng đơn giản
 //! - Dạng instance (vnkey_engine_new/vnkey_engine_process/...) cho IME framework
 
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
 use std::sync::Mutex;
@@ -144,6 +144,7 @@ pub extern "C" fn vnkey_set_options(
     spell_check: i32,
     auto_restore: i32,
     ede_mode: i32,
+    macro_enabled: i32,
 ) {
     with_engine(|engine| {
         engine.options.free_marking = free_marking != 0;
@@ -151,6 +152,7 @@ pub extern "C" fn vnkey_set_options(
         engine.options.spell_check_enabled = spell_check != 0;
         engine.options.auto_non_vn_restore = auto_restore != 0;
         engine.options.ede_mode = ede_mode != 0;
+        engine.options.macro_enabled = macro_enabled != 0;
     });
 }
 
@@ -360,6 +362,7 @@ pub unsafe extern "C" fn vnkey_engine_set_options(
     spell_check: i32,
     auto_restore: i32,
     ede_mode: i32,
+    macro_enabled: i32,
 ) {
     if engine.is_null() {
         return;
@@ -370,6 +373,7 @@ pub unsafe extern "C" fn vnkey_engine_set_options(
     e.options.spell_check_enabled = spell_check != 0;
     e.options.auto_non_vn_restore = auto_restore != 0;
     e.options.ede_mode = ede_mode != 0;
+    e.options.macro_enabled = macro_enabled != 0;
 }
 
 /// Kiểm tra engine đang ở đầu từ.
@@ -381,6 +385,100 @@ pub unsafe extern "C" fn vnkey_engine_at_word_beginning(engine: *mut VnKeyEngine
         return 1;
     }
     if (*engine).at_word_beginning() { 1 } else { 0 }
+}
+
+/// Thêm macro vào instance engine. Trả 1 nếu thành công.
+/// # Safety
+/// `engine` phải là con trỏ hợp lệ từ `vnkey_engine_new`.
+#[no_mangle]
+pub unsafe extern "C" fn vnkey_engine_add_macro(
+    engine: *mut VnKeyEngine,
+    key: *const c_char,
+    value: *const c_char,
+) -> i32 {
+    if engine.is_null() || key.is_null() || value.is_null() {
+        return 0;
+    }
+    let key_str = match CStr::from_ptr(key).to_str() {
+        Ok(s) => s,
+        Err(_) => return 0,
+    };
+    let value_str = match CStr::from_ptr(value).to_str() {
+        Ok(s) => s,
+        Err(_) => return 0,
+    };
+    if (*engine).macro_table.add(key_str, value_str) { 1 } else { 0 }
+}
+
+/// Xóa macro theo key. Trả 1 nếu tìm và xóa thành công.
+/// # Safety
+/// `engine` phải là con trỏ hợp lệ từ `vnkey_engine_new`.
+#[no_mangle]
+pub unsafe extern "C" fn vnkey_engine_remove_macro(
+    engine: *mut VnKeyEngine,
+    key: *const c_char,
+) -> i32 {
+    if engine.is_null() || key.is_null() {
+        return 0;
+    }
+    let key_str = match CStr::from_ptr(key).to_str() {
+        Ok(s) => s,
+        Err(_) => return 0,
+    };
+    if (*engine).macro_table.remove(key_str) { 1 } else { 0 }
+}
+
+/// Xóa tất cả macro trên instance.
+/// # Safety
+/// `engine` phải là con trỏ hợp lệ từ `vnkey_engine_new`.
+#[no_mangle]
+pub unsafe extern "C" fn vnkey_engine_clear_macros(engine: *mut VnKeyEngine) {
+    if !engine.is_null() {
+        (*engine).macro_table.clear();
+    }
+}
+
+/// Tải macro từ văn bản tab-separated vào instance.
+/// # Safety
+/// `engine` phải là con trỏ hợp lệ từ `vnkey_engine_new`.
+#[no_mangle]
+pub unsafe extern "C" fn vnkey_engine_load_macros(
+    engine: *mut VnKeyEngine,
+    text: *const c_char,
+) {
+    if engine.is_null() || text.is_null() {
+        return;
+    }
+    if let Ok(s) = CStr::from_ptr(text).to_str() {
+        (*engine).macro_table.load_from_text(s);
+    }
+}
+
+/// Xuất tất cả macro thành chuỗi tab-separated. Caller phải gọi vnkey_engine_free_string.
+/// # Safety
+/// `engine` phải là con trỏ hợp lệ từ `vnkey_engine_new`.
+#[no_mangle]
+pub unsafe extern "C" fn vnkey_engine_save_macros(
+    engine: *mut VnKeyEngine,
+) -> *mut c_char {
+    if engine.is_null() {
+        return std::ptr::null_mut();
+    }
+    let text = (*engine).macro_table.to_text();
+    match CString::new(text) {
+        Ok(cs) => cs.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// Giải phóng chuỗi trả về từ vnkey_engine_save_macros.
+/// # Safety
+/// `s` phải là con trỏ từ vnkey_engine_save_macros, hoặc null.
+#[no_mangle]
+pub unsafe extern "C" fn vnkey_engine_free_string(s: *mut c_char) {
+    if !s.is_null() {
+        drop(CString::from_raw(s));
+    }
 }
 
 // ==================== Chuyển đổi bảng mã ====================

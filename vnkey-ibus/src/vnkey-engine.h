@@ -54,10 +54,18 @@ void vnkey_engine_set_viet_mode(VnKeyEngine *engine, int enabled);
 void vnkey_engine_set_options(VnKeyEngine *engine,
                              int free_marking, int modern_style,
                              int spell_check, int auto_restore,
-                             int ede_mode);
+                             int ede_mode, int macro_enabled);
 
 /* Trả 1 nếu ở đầu từ */
 int vnkey_engine_at_word_beginning(VnKeyEngine *engine);
+
+/* ==================== Macro (gõ tắt) ==================== */
+int vnkey_engine_add_macro(VnKeyEngine *engine, const char *key, const char *value);
+int vnkey_engine_remove_macro(VnKeyEngine *engine, const char *key);
+void vnkey_engine_clear_macros(VnKeyEngine *engine);
+void vnkey_engine_load_macros(VnKeyEngine *engine, const char *text);
+char *vnkey_engine_save_macros(VnKeyEngine *engine);
+void vnkey_engine_free_string(char *s);
 
 /* Chuyển UTF-8 sang bảng mã đích.
  * charset_id: 0=Unicode, 1=UTF-8, 2=NCR-DEC, 3=NCR-HEX, 4=UniDecomposed,

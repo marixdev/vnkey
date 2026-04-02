@@ -3,6 +3,15 @@
 ## 1.0.3 — 2026-04-02
 
 ### vnkey-engine
+- **Sửa lỗi** chữ W hoa khi gõ Telex: gõ `WW` giờ cho `W` thay vì `w` (issue #16)
+- **Tính năng mới**: Gõ tắt (Auto-text / Macro) — hỗ trợ mở rộng viết tắt thành cụm từ
+  - Ví dụ: `bc` → `báo cáo`, `Bc` → `Báo Cáo`, `BC` → `BÁO CÁO`
+  - Tự động nhận dạng kiểu chữ (thường/hoa đầu/hoa hết) và áp dụng cho kết quả
+  - Kích hoạt tại ranh giới từ (dấu cách, dấu câu)
+  - Thêm `try_macro_expand()` trong engine `process()`
+  - Thêm `to_text()`, `to_json()`, `load_from_json()` cho `MacroTable`
+- Cập nhật FFI: `vnkey_set_options` và `vnkey_engine_set_options` thêm `macro_enabled`
+- Thêm FFI instance: `vnkey_engine_add_macro`, `vnkey_engine_remove_macro`, `vnkey_engine_clear_macros`, `vnkey_engine_load_macros`, `vnkey_engine_save_macros`, `vnkey_engine_free_string`
 - Thêm hỗ trợ **tiếng Tây Nguyên** (Êđê, Jarai, M'Nông, K'Ho, Xê đăng, Sán chỉ): tùy chọn `ede_mode` trong engine
   - Telex: `aaw`→ẁ, `eew`→ẅ, `oow`→ö, `oww`→ő, `uww`→ů, `cw`→č, `ew`→ĕ, `iw`→ĭ, `oz`→ŏ, `uz`→ŭ, `nx`→ñ, `b9`/`bb`→ẃ
   - VNI: `a68`→ẁ, `e68`→ẅ, `o68`→ö, `o78`→ő, `u78`→ů, `c8`→č, `e8`→ĕ, `i8`→ĭ, `o8`→ŏ, `u8`→ŭ, `n4`→ñ, `b9`→ẃ
@@ -12,23 +21,29 @@
 - Cập nhật FFI: `vnkey_set_options` và `vnkey_engine_set_options` thêm tham số `ede_mode`
 
 ### vnkey-windows
+- Thêm checkbox "Gõ tắt (Auto-text)" trong cửa sổ cấu hình
+- Thêm nút "Gõ tắt" mở cửa sổ quản lý macros (thêm/xoá/danh sách)
+- Lưu/nạp `macro_enabled` và bảng macros (JSON) trong config
 - Thêm checkbox "Tiếng Tây Nguyên (Êđê)" trong cửa sổ cấu hình
 - Lưu/nạp `ede_mode` trong config.json
 
 ### vnkey-fcitx5
+- Thêm toggle "Gõ tắt" trong menu tray, lưu/nạp macros trong config JSON
 - Thêm toggle "Tây Nguyên – Êđê" trong menu tray
 - Lưu/nạp `ede_mode` trong config JSON
 - **Sửa lỗi gõ tiếng Việt trên ứng dụng terminal** (Claude Code, vim trong terminal, v.v.): tự động phát hiện ứng dụng terminal và chuyển sang chế độ preedit (commit nguyên tử) thay vì deleteSurroundingText + commitString riêng biệt
   - Tham khảo: manhit96/claude-code-vietnamese-fix (tác giả: manhit96, credits: PHTV)
 
 ### vnkey-ibus
+- Thêm toggle "Gõ tắt" trong menu, lưu/nạp macros trong config JSON
 - Thêm toggle "Tây Nguyên – Êđê" trong menu tray
 - Lưu/nạp `ede_mode` trong config JSON
 - **Sửa lỗi gõ tiếng Việt trên ứng dụng terminal**: phát hiện terminal và dùng preedit mode (giống Fcitx5)
 
 ### vnkey-macos
+- Thêm tùy chọn `VnKeyMacroEnabled` + `VnKeyMacros` trong Preferences
 - Thêm tùy chọn `VnKeyEdeMode` trong Preferences
-- Cập nhật C header cho `vnkey_engine_set_options` (thêm `ede_mode`)
+- Cập nhật C header cho `vnkey_engine_set_options` (thêm `ede_mode`, `macro_enabled`)
 
 ---
 

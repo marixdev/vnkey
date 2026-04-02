@@ -9,6 +9,52 @@ use crate::macro_table::MacroTable;
 
 const MAX_BUFFER: usize = 128;
 
+/// Kiểu hoa/thường của từ viết tắt
+enum CaseType {
+    AllLower,   // "bc" → báo cáo
+    FirstUpper, // "Bc" → Báo Cáo
+    AllUpper,   // "BC" → BÁO CÁO
+}
+
+fn detect_case(s: &str) -> CaseType {
+    let mut first_upper = false;
+    let mut all_upper = true;
+    for (i, ch) in s.chars().enumerate() {
+        if i == 0 && ch.is_uppercase() {
+            first_upper = true;
+        }
+        if ch.is_lowercase() {
+            all_upper = false;
+        }
+    }
+    if all_upper && first_upper {
+        CaseType::AllUpper
+    } else if first_upper {
+        CaseType::FirstUpper
+    } else {
+        CaseType::AllLower
+    }
+}
+
+fn capitalize_words(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut cap_next = true;
+    for ch in s.chars() {
+        if cap_next && ch.is_alphabetic() {
+            for c in ch.to_uppercase() {
+                result.push(c);
+            }
+            cap_next = false;
+        } else {
+            result.push(ch);
+            if ch == ' ' {
+                cap_next = true;
+            }
+        }
+    }
+    result
+}
+
 /// Loại đầu ra từ engine
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputType {
@@ -227,11 +273,26 @@ impl Engine {
         self.change_pos = self.current + 1;
         self.reverted = false;
 
+        // Lưu trạng thái trước dispatch để kiểm tra macro
+        let prev_current = self.current;
+
         // Snapshot toàn bộ output hiện tại TRƯỚC khi dispatch modify buffer
         // Dùng cho get_backspaces_for_multi_byte
         self.snapshot_output();
 
         let ev = self.input.key_code_to_event(key_code);
+
+        // Kiểm tra macro: khi nhận được word break hoặc reset,
+        // kiểm tra từ vừa gõ có khớp macro không
+        if self.options.macro_enabled
+            && !self.macro_table.is_empty()
+            && prev_current >= 0
+            && (ev.ch_type == CharType::WordBreak || ev.ch_type == CharType::Reset)
+        {
+            if let Some(result) = self.try_macro_expand(prev_current, key_code) {
+                return result;
+            }
+        }
 
         let ret;
         if !self.to_escape {
@@ -534,6 +595,68 @@ impl Engine {
                 self.key_current -= 1;
             }
         }
+    }
+
+    /// Kiểm tra macro: trích xuất từ vừa gõ, tra trong macro_table.
+    /// Nếu khớp, trả về ProcessResult với backspaces xóa từ cũ + output là expansion.
+    /// Quy tắc hoa/thường: bc→báo cáo, Bc→Báo Cáo, BC→BÁO CÁO.
+    fn try_macro_expand(&mut self, prev_current: i32, trigger_key: u32) -> Option<ProcessResult> {
+        // Trích xuất phím gốc đã gõ (từ key_strokes)
+        let mut typed = String::new();
+        // key_current trỏ tới phím cuối cùng trước trigger
+        // prev_current là current trước dispatch
+        // Lùi tìm đầu từ trong buffer
+        let mut word_start = prev_current;
+        while word_start > 0 && self.buf(word_start - 1).form != WordForm::Empty {
+            word_start -= 1;
+        }
+
+        // Đếm ký tự trên screen (UTF-8 chars) từ word_start đến prev_current
+        let on_screen_chars = (prev_current - word_start + 1) as usize;
+
+        // Thu thập phím gõ gốc
+        for i in word_start..=prev_current {
+            let kc = self.buffer[i as usize].key_code;
+            if let Some(ch) = char::from_u32(kc) {
+                typed.push(ch);
+            }
+        }
+
+        if typed.is_empty() {
+            return None;
+        }
+
+        // Tra macro (không phân biệt hoa/thường)
+        let expansion = self.macro_table.lookup(&typed)?.to_string();
+
+        // Xác định kiểu viết hoa
+        let case_type = detect_case(&typed);
+        let adjusted = match case_type {
+            CaseType::AllLower => expansion,
+            CaseType::FirstUpper => capitalize_words(&expansion),
+            CaseType::AllUpper => expansion.to_uppercase(),
+        };
+
+        // Tính backspaces: xóa toàn bộ từ đã gõ
+        let backspaces = on_screen_chars;
+
+        // Reset engine state
+        self.reset();
+
+        // Đầu ra: expansion UTF-8
+        let mut output = adjusted.into_bytes();
+        // Thêm trigger key (dấu cách / dấu chấm câu) vào cuối
+        if trigger_key >= 0x20 && trigger_key < 0x80 {
+            output.push(trigger_key as u8);
+        }
+
+        Some(ProcessResult {
+            backspaces,
+            backspaces_bytes: 0,
+            output,
+            out_type: OutputType::Char,
+            processed: true,
+        })
     }
 
     /// Khôi phục phím gốc khi từ không phải tiếng Việt (auto_non_vn_restore)
@@ -1608,7 +1731,8 @@ impl Engine {
             self.mark_change(self.current);
             self.buffer[self.current as usize].form = WordForm::NonVn;
             self.buffer[self.current as usize].vn_sym = VnLexiName::NonVnChar;
-            self.buffer[self.current as usize].key_code = b'w' as u32;
+            self.buffer[self.current as usize].key_code =
+                if self.buf(self.current).caps { b'W' as u32 } else { b'w' as u32 };
             self.buffer[self.current as usize].v_offset = -1;
             self.single_mode = false;
             self.reverted = true;

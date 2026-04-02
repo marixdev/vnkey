@@ -52,6 +52,8 @@ public:
     bool freeMarking() const { return freeMarking_; }
     bool modernStyle() const { return modernStyle_; }
     bool edeMode() const { return edeMode_; }
+    bool macroEnabled() const { return macroEnabled_; }
+    const std::string &macroText() const { return macroText_; }
 
 private:
     void setupMenu();
@@ -61,6 +63,7 @@ private:
     void updateFreeAction(InputContext *ic);
     void updateModernAction(InputContext *ic);
     void updateEdeAction(InputContext *ic);
+    void updateMacroAction(InputContext *ic);
     void updateClipLabels();
     void updateUI(InputContext *ic);
     void convertClipboard(bool toUnicode);
@@ -78,6 +81,8 @@ private:
     bool freeMarking_ = true;
     bool modernStyle_ = true;
     bool edeMode_ = false;
+    bool macroEnabled_ = false;
+    std::string macroText_;  /* tab-separated macro entries */
     unsigned settingsGen_ = 0;
 
     /* Menu khay — giống fcitx5-unikey: mỗi nhóm một Action + Menu riêng */
@@ -93,6 +98,7 @@ private:
     std::unique_ptr<SimpleAction> freeAction_;
     std::unique_ptr<SimpleAction> modernAction_;
     std::unique_ptr<SimpleAction> edeAction_;
+    std::unique_ptr<SimpleAction> macroAction_;
     std::unique_ptr<SimpleAction> clipToUniAction_;
     std::unique_ptr<SimpleAction> clipFromUniAction_;
 };

@@ -59,6 +59,7 @@ pub struct EngineState {
     pub free_marking: bool,
     pub modern_style: bool,
     pub ede_mode: bool,
+    pub macro_enabled: bool,
 }
 
 impl EngineState {
@@ -85,6 +86,7 @@ impl EngineState {
             free_marking: true,
             modern_style: true,
             ede_mode: false,
+            macro_enabled: false,
         }
     }
 
@@ -112,6 +114,7 @@ impl EngineState {
         self.engine.options.modern_style = self.modern_style;
         self.engine.options.spell_check_enabled = self.spell_check;
         self.engine.options.ede_mode = self.ede_mode;
+        self.engine.options.macro_enabled = self.macro_enabled;
     }
 }
 

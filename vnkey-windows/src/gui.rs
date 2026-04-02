@@ -102,7 +102,7 @@ fn relaunch_normal() {
 // ── HTML ─────────────────────────────────────────────────────────────────────
 
 fn build_html(im: i32, cs: i32, spell: bool, free: bool, modern: bool,
-              ede: bool, auto_start: bool, run_admin: bool) -> String {
+              ede: bool, macro_en: bool, auto_start: bool, run_admin: bool) -> String {
     let cs_idx = cs_index(cs);
     let cs_names = ["Unicode","UTF-8","NCR Decimal","NCR Hex","CP-1258",
         "VIQR","TCVN3 (ABC)","VPS","VISCII","VNU","VNI Windows","VNI Mac"];
@@ -149,6 +149,7 @@ fn build_html(im: i32, cs: i32, spell: bool, free: bool, modern: bool,
           <label class="cb-item"><input type="checkbox" {free} onchange="cmd({{cmd:'free',v:this.checked}})">Bỏ dấu tự do</label>
           <label class="cb-item"><input type="checkbox" {modern} onchange="cmd({{cmd:'modern',v:this.checked}})">Kiểu mới (oà, uý)</label>
           <label class="cb-item"><input type="checkbox" {ede} onchange="cmd({{cmd:'ede',v:this.checked}})">Tiếng Tây Nguyên (Êđê)</label>
+          <label class="cb-item"><input type="checkbox" {macro_en} onchange="cmd({{cmd:'macro',v:this.checked}})">Gõ tắt (Auto-text)</label>
           <label class="cb-item"><input type="checkbox" {autostart} onchange="cmd({{cmd:'autostart',v:this.checked}})">Khởi động cùng Windows</label>
           <label class="cb-item"><input type="checkbox" {admin} onchange="cmd({{cmd:'admin',v:this.checked}})">Chạy với quyền Admin</label>
         </div>
@@ -160,6 +161,7 @@ fn build_html(im: i32, cs: i32, spell: bool, free: bool, modern: bool,
       <button class="full tool-btn" onclick="cmd({{cmd:'converter'}})"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg> Chuyển mã</button>
       <button class="full tool-btn" onclick="cmd({{cmd:'hotkey'}})"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M6 8h.01M10 8h.01M14 8h.01M18 8h.01M6 12h.01M10 12h.01M14 12h.01M18 12h.01M8 16h8"/></svg> Gán phím</button>
       <button class="full tool-btn" onclick="cmd({{cmd:'appcs'}})"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg> Bảng mã theo app</button>
+      <button class="full tool-btn" onclick="cmd({{cmd:'macrotbl'}})"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> Gõ tắt</button>
       <div style="flex:1"></div>
       <button class="full primary" onclick="cmd({{cmd:'close'}})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Đóng</button>
       <button class="full danger" onclick="cmd({{cmd:'exit'}})"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg> Thoát</button>
@@ -169,7 +171,8 @@ fn build_html(im: i32, cs: i32, spell: bool, free: bool, modern: bool,
 "##,
         ver = VERSION,
         spell = ck(spell), free = ck(free), modern = ck(modern),
-        ede = ck(ede), autostart = ck(auto_start), admin = ck(run_admin),
+        ede = ck(ede), macro_en = ck(macro_en),
+        autostart = ck(auto_start), admin = ck(run_admin),
     );
 
     webview::html(&body, "")
@@ -225,6 +228,14 @@ fn handle_ipc(body: &str, proxy: tao::event_loop::EventLoopProxy<UiEvent>) {
             }
             crate::config::save();
         }
+        "macro" => {
+            let v = msg["v"].as_bool().unwrap_or(false);
+            if let Ok(mut g) = ENGINE.lock() {
+                if let Some(s) = g.as_mut() { s.macro_enabled = v; s.sync_options(); }
+            }
+            crate::config::save();
+        }
+        "macrotbl" => { open_macro_window(); }
         "autostart" => { set_auto_start(msg["v"].as_bool().unwrap_or(false)); }
         "admin" => {
             let v = msg["v"].as_bool().unwrap_or(false);
@@ -254,15 +265,100 @@ fn handle_ipc(body: &str, proxy: tao::event_loop::EventLoopProxy<UiEvent>) {
 }
 
 fn run_config() {
-    let (im, cs, spell, free, modern, ede) = {
+    let (im, cs, spell, free, modern, ede, macro_en) = {
         let g = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
         match g.as_ref() {
-            Some(s) => (s.input_method, s.output_charset, s.spell_check, s.free_marking, s.modern_style, s.ede_mode),
-            None => (0, 1, true, true, true, false),
+            Some(s) => (s.input_method, s.output_charset, s.spell_check, s.free_marking, s.modern_style, s.ede_mode, s.macro_enabled),
+            None => (0, 1, true, true, true, false, false),
         }
     };
     let auto_start = is_auto_start_enabled();
     let run_admin = crate::tray::get_run_as_admin();
-    let html = build_html(im, cs, spell, free, modern, ede, auto_start, run_admin);
-    webview::run_webview(&format!("VnKey {VERSION}"), 560.0, 330.0, &html, handle_ipc);
+    let html = build_html(im, cs, spell, free, modern, ede, macro_en, auto_start, run_admin);
+    webview::run_webview(&format!("VnKey {VERSION}"), 560.0, 340.0, &html, handle_ipc);
+}
+
+// ── Macro management window ──────────────────────────────────────────────────
+
+fn open_macro_window() {
+    // Đọc macros hiện tại
+    let macros_json = {
+        let g = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
+        match g.as_ref() {
+            Some(s) => s.engine.macro_table.to_json(),
+            None => "[]".to_string(),
+        }
+    };
+
+    let body = format!(r##"
+<div class="container" style="gap:10px">
+  <div style="font-weight:600;font-size:14px">Gõ tắt (Auto-text)</div>
+  <div style="font-size:11px;color:var(--text-dim)">Ví dụ: bc → báo cáo, Bc → Báo Cáo, BC → BÁO CÁO</div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <input id="mk" placeholder="Viết tắt" style="flex:1;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);font-size:12px">
+    <input id="mv" placeholder="Nội dung" style="flex:2;padding:4px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);font-size:12px">
+    <button onclick="addMacro()" style="padding:4px 12px;border:1px solid var(--accent);border-radius:4px;background:var(--accent);color:#fff;cursor:pointer;font-size:12px">Thêm</button>
+  </div>
+  <div id="list" style="flex:1;overflow-y:auto;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);font-size:12px"></div>
+  <div style="display:flex;gap:8px;justify-content:flex-end">
+    <button onclick="cmd({{cmd:'macro_close'}})" style="padding:4px 16px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text);cursor:pointer;font-size:12px">Đóng</button>
+  </div>
+</div>
+<script>
+var macros = {macros_json};
+function render() {{
+  var h='';
+  macros.forEach(function(m,i){{
+    h+='<div style="display:flex;align-items:center;padding:4px 8px;border-bottom:1px solid var(--border)">'
+      +'<span style="width:100px;font-weight:600">'+esc(m.key)+'</span>'
+      +'<span style="flex:1">'+esc(m.value)+'</span>'
+      +'<span style="cursor:pointer;color:var(--accent);padding:0 6px" onclick="del('+i+')">✕</span>'
+      +'</div>';
+  }});
+  document.getElementById('list').innerHTML=h||'<div style="padding:16px;text-align:center;color:var(--text-dim)">Chưa có mục nào</div>';
+}}
+function esc(s){{ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }}
+function addMacro(){{
+  var k=document.getElementById('mk').value.trim();
+  var v=document.getElementById('mv').value.trim();
+  if(!k||!v) return;
+  var found=false;
+  macros.forEach(function(m){{ if(m.key.toLowerCase()===k.toLowerCase()){{ m.value=v; found=true; }} }});
+  if(!found) macros.push({{key:k,value:v}});
+  document.getElementById('mk').value='';
+  document.getElementById('mv').value='';
+  render();
+  cmd({{cmd:'macro_save',data:JSON.stringify(macros)}});
+}}
+function del(i){{
+  macros.splice(i,1);
+  render();
+  cmd({{cmd:'macro_save',data:JSON.stringify(macros)}});
+}}
+render();
+</script>
+"##);
+
+    let html = webview::html(&body, "");
+    webview::run_webview("Gõ tắt — VnKey", 460.0, 400.0, &html, handle_macro_ipc);
+}
+
+fn handle_macro_ipc(body: &str, proxy: tao::event_loop::EventLoopProxy<UiEvent>) {
+    let msg: serde_json::Value = match serde_json::from_str(body) {
+        Ok(v) => v, Err(_) => return,
+    };
+    let cmd = msg["cmd"].as_str().unwrap_or("");
+    match cmd {
+        "macro_save" => {
+            let data = msg["data"].as_str().unwrap_or("[]");
+            if let Ok(mut g) = ENGINE.lock() {
+                if let Some(s) = g.as_mut() {
+                    s.engine.macro_table.load_from_json(data);
+                }
+            }
+            crate::config::save();
+        }
+        "macro_close" => { let _ = proxy.send_event(UiEvent::Close); }
+        _ => {}
+    }
 }
