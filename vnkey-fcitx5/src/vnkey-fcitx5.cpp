@@ -813,6 +813,12 @@ void VnKeyState::commitPreedit(bool soft) {
             }
         }
         preedit_.clear();
+        /* Xóa cả client-side và server-side preedit sau khi commit,
+         * tránh text cũ còn sót lại trên panel Fcitx5 (đặc biệt với
+         * sandbox apps không hỗ trợ ClientPreedit). */
+        ic_->inputPanel().setClientPreedit(Text());
+        ic_->inputPanel().setPreedit(Text());
+        ic_->updatePreedit();
     }
     if (soft)
         vnkey_engine_soft_reset(vnkeyEngine_);
