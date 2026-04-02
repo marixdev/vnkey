@@ -29,6 +29,13 @@ static IS_VM: AtomicBool = AtomicBool::new(false);
 /// Vietnamese input được xử lý qua JavaScript + IPC bên trong WebView2.
 static IS_SELF: AtomicBool = AtomicBool::new(false);
 
+/// Firefox-based: cần gửi U+202F (empty char) trước backspace.
+/// Spell checker/autocomplete Firefox can thiệp với Shift+Left khi đang
+/// có suggestion. Gửi U+202F phá vỡ spell checker state, sau đó
+/// Shift+Left hoạt động bình thường. Thêm 1 backspace để xóa U+202F.
+/// (Kỹ thuật từ OpenKey: vFixRecommendBrowser)
+static FIX_RECOMMEND: AtomicBool = AtomicBool::new(false);
+
 /// Cờ đánh dấu VnKey đang inject phím qua SendInput.
 /// Hook kiểm tra cờ này ngoài dwExtraInfo để nhận diện phím của chính mình,
 /// phòng trường hợp VMware/RDP/VNC không giữ nguyên dwExtraInfo.
@@ -43,11 +50,18 @@ pub fn is_sending() -> bool {
 const VK_BACK_APPS: &[&str] = &[
     "wps.exe", "wpp.exe", "et.exe",     // WPS Office
     "WINWORD.EXE", "EXCEL.EXE", "POWERPNT.EXE", // MS Office
-    // Trình duyệt Firefox-based: Shift+Left không hoạt động trên thanh tìm kiếm/địa chỉ
-    "firefox.exe", "librewolf.exe", "waterfox.exe", "mullvad-browser.exe",
-    "zen.exe",                                    // Zen Browser (Firefox-based)
+    "librewolf.exe", "waterfox.exe", "mullvad-browser.exe",
     // Electron apps có custom editor (Shift+Left bị chặn/hoạt động sai)
     "Notion.exe",
+];
+
+/// Firefox-based browsers: cần gửi U+202F trước backspace.
+/// Spell checker/autocomplete can thiệp với Shift+Left.
+/// Gửi ký tự rỗng U+202F phá vỡ spell checker state,
+/// sau đó Shift+Left hoạt động bình thường.
+/// (Kỹ thuật từ OpenKey: vFixRecommendBrowser + SendEmptyCharacter)
+const RECOMMEND_FIX_APPS: &[&str] = &[
+    "firefox.exe", "zen.exe",
 ];
 
 /// Console apps: cần VK_BACK + WriteConsoleInputW cho Unicode text.
@@ -92,6 +106,15 @@ pub fn update_backspace_method() {
     IS_SELF.store(is_self, Ordering::Relaxed);
     if is_self {
         crate::debug_log::log(&format!("  SELF_MODE exe={:?}", exe));
+    }
+
+    // Detect Firefox-based: cần gửi U+202F trước Shift+Left
+    let fix_rec = exe.as_ref()
+        .map(|e| RECOMMEND_FIX_APPS.iter().any(|app| app.eq_ignore_ascii_case(e)))
+        .unwrap_or(false);
+    FIX_RECOMMEND.store(fix_rec, Ordering::Relaxed);
+    if fix_rec {
+        crate::debug_log::log(&format!("  FIX_RECOMMEND_MODE exe={:?}", exe));
     }
 
     let is_console = exe.as_ref()
@@ -207,11 +230,23 @@ fn send_backspaces_and_text(backspaces: usize, text: &str) {
     }
 
     let mut inputs: Vec<INPUT> = Vec::new();
+    let fix_rec = FIX_RECOMMEND.load(Ordering::Relaxed);
+    let force_vk_back = USE_VK_BACK.load(Ordering::Relaxed);
+    let effective_backspaces;
 
-    build_backspace_inputs(&mut inputs, backspaces, !text.is_empty());
+    // Firefox: gửi U+202F (empty char) trước để phá vỡ spell checker state.
+    // Thêm 1 backspace để xóa U+202F. (Kỹ thuật từ OpenKey)
+    if fix_rec && backspaces > 0 && !text.is_empty() && !force_vk_back {
+        inputs.push(make_unicode_input(0x202F, KEYBD_EVENT_FLAGS(0), VNKEY_INJECTED_TAG));
+        inputs.push(make_unicode_input(0x202F, KEYEVENTF_KEYUP, VNKEY_INJECTED_TAG));
+        effective_backspaces = backspaces + 1;
+    } else {
+        effective_backspaces = backspaces;
+    }
+
+    build_backspace_inputs(&mut inputs, effective_backspaces, !text.is_empty());
 
     // Văn bản dưới dạng ký tự Unicode (KEYEVENTF_UNICODE)
-    // Nếu đang chọn văn bản từ Shift+Left, thao tác này thay thế vùng chọn.
     for ch in text.encode_utf16() {
         inputs.push(make_unicode_input(ch, KEYBD_EVENT_FLAGS(0), VNKEY_INJECTED_TAG));
         inputs.push(make_unicode_input(ch, KEYEVENTF_KEYUP, VNKEY_INJECTED_TAG));
@@ -236,8 +271,19 @@ fn send_backspaces_and_raw(backspaces: usize, raw_bytes: &[u8]) {
     }
 
     let mut inputs: Vec<INPUT> = Vec::new();
+    let fix_rec = FIX_RECOMMEND.load(Ordering::Relaxed);
+    let force_vk_back = USE_VK_BACK.load(Ordering::Relaxed);
+    let effective_backspaces;
 
-    build_backspace_inputs(&mut inputs, backspaces, !raw_bytes.is_empty());
+    if fix_rec && backspaces > 0 && !raw_bytes.is_empty() && !force_vk_back {
+        inputs.push(make_unicode_input(0x202F, KEYBD_EVENT_FLAGS(0), VNKEY_INJECTED_TAG));
+        inputs.push(make_unicode_input(0x202F, KEYEVENTF_KEYUP, VNKEY_INJECTED_TAG));
+        effective_backspaces = backspaces + 1;
+    } else {
+        effective_backspaces = backspaces;
+    }
+
+    build_backspace_inputs(&mut inputs, effective_backspaces, !raw_bytes.is_empty());
 
     for &b in raw_bytes {
         inputs.push(make_unicode_input(b as u16, KEYBD_EVENT_FLAGS(0), VNKEY_INJECTED_TAG));

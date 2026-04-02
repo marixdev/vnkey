@@ -1,0 +1,82 @@
+name: macOS Test Build
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (with both targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            vnkey-engine/target
+          key: macos-cargo-${{ hashFiles('vnkey-engine/Cargo.lock') }}
+
+      - name: Build vnkey-engine (universal)
+        run: |
+          cd vnkey-engine
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+          mkdir -p target/release
+          lipo -create \
+            target/aarch64-apple-darwin/release/libvnkey_engine.a \
+            target/x86_64-apple-darwin/release/libvnkey_engine.a \
+            -output target/release/libvnkey_engine.a
+
+      - name: Build VnKey.app
+        run: |
+          cd vnkey-macos
+          cmake -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+          cmake --build build --config Release
+
+      - name: Verify codesign
+        run: |
+          codesign -dv --verbose=4 vnkey-macos/build/VnKey.app 2>&1 || true
+          echo "---"
+          ls -la vnkey-macos/build/VnKey.app/Contents/MacOS/
+          echo "---"
+          cat vnkey-macos/build/VnKey.app/Contents/Info.plist
+
+      - name: Create DMG
+        run: |
+          cd vnkey-macos
+          mkdir -p dmg-stage
+          cp -R build/VnKey.app dmg-stage/
+
+          # Create install script
+          cat > dmg-stage/install.sh << 'SCRIPT'
+          #!/bin/bash
+          DEST="$HOME/Library/Input Methods"
+          mkdir -p "$DEST"
+          rm -rf "$DEST/VnKey.app"
+          cp -R "$(dirname "$0")/VnKey.app" "$DEST/"
+          echo "VnKey đã được cài vào $DEST"
+          echo "Vào System Settings > Keyboard > Input Sources để thêm VnKey."
+          echo "Nếu không thấy, đăng xuất và đăng nhập lại."
+          SCRIPT
+          chmod +x dmg-stage/install.sh
+
+          hdiutil create -volname "VnKey" \
+            -srcfolder dmg-stage \
+            -ov -format UDZO \
+            build/VnKey.dmg
+
+      - name: Upload macOS DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnkey-macos
+          path: vnkey-macos/build/VnKey.dmg

@@ -14,6 +14,8 @@
     void *_engine;
     /* Chế độ tiếng Việt */
     BOOL _vietMode;
+    /* Sử dụng preedit (gạch chân) hay commit trực tiếp */
+    BOOL _usePreedit;
 }
 
 - (void)commitPreedit:(id)sender;

@@ -11,6 +11,8 @@
 #import "VnKeyInputController.h"
 #import "vnkey-engine.h"
 #import <Carbon/Carbon.h>
+#import <CoreGraphics/CoreGraphics.h>
+#include <unistd.h>
 
 /* ==================== Preferences keys ==================== */
 static NSString *const kVnKeyInputMethod   = @"VnKeyInputMethod";
@@ -22,11 +24,12 @@ static NSString *const kVnKeyAutoRestore   = @"VnKeyAutoRestore";
 static NSString *const kVnKeyEdeMode       = @"VnKeyEdeMode";
 static NSString *const kVnKeyMacroEnabled   = @"VnKeyMacroEnabled";
 static NSString *const kVnKeyMacros         = @"VnKeyMacros";
+static NSString *const kVnKeyUsePreedit     = @"VnKeyUsePreedit";
 
 /* ==================== Helpers ==================== */
 
 /* Đọc cài đặt từ UserDefaults */
-static void loadPreferences(void *engine, BOOL *outVietMode) {
+static void loadPreferences(void *engine, BOOL *outVietMode, BOOL *outUsePreedit) {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
 
     /* Đăng ký mặc định */
@@ -40,6 +43,7 @@ static void loadPreferences(void *engine, BOOL *outVietMode) {
         kVnKeyEdeMode:     @NO,
         kVnKeyMacroEnabled:@NO,
         kVnKeyMacros:      @"",
+        kVnKeyUsePreedit:  @NO,
     };
     [defaults registerDefaults:defaultValues];
 
@@ -51,6 +55,7 @@ static void loadPreferences(void *engine, BOOL *outVietMode) {
     BOOL autoRestore = [defaults boolForKey:kVnKeyAutoRestore];
     BOOL ede = [defaults boolForKey:kVnKeyEdeMode];
     BOOL macroEn = [defaults boolForKey:kVnKeyMacroEnabled];
+    BOOL usePreedit = [defaults boolForKey:kVnKeyUsePreedit];
 
     vnkey_engine_set_input_method(engine, im);
     vnkey_engine_set_viet_mode(engine, viet ? 1 : 0);
@@ -65,6 +70,7 @@ static void loadPreferences(void *engine, BOOL *outVietMode) {
     }
 
     if (outVietMode) *outVietMode = viet;
+    if (outUsePreedit) *outUsePreedit = usePreedit;
 }
 
 /* Xóa n ký tự UTF-16 cuối khỏi NSMutableString */
@@ -88,7 +94,8 @@ static void removeLastChars(NSMutableString *str, NSUInteger count) {
         _preedit = [[NSMutableString alloc] init];
         _engine = vnkey_engine_new();
         _vietMode = YES;
-        loadPreferences(_engine, &_vietMode);
+        _usePreedit = NO;
+        loadPreferences(_engine, &_vietMode, &_usePreedit);
 
         /* Lắng nghe thay đổi cài đặt từ Preferences panel */
         [[NSNotificationCenter defaultCenter]
@@ -142,9 +149,52 @@ static void removeLastChars(NSMutableString *str, NSUInteger count) {
         return NO;
     }
 
-    /* Phím Space: soft reset */
+    /* Phím Space: xử lý macro expansion hoặc soft reset */
     if (keyCode == kVK_Space) {
-        [self commitPreedit:sender];
+        if (_usePreedit && _preedit.length > 0) {
+            [self commitPreedit:sender];
+        }
+        /* Gửi Space qua engine để kích hoạt macro expansion */
+        uint8_t outBuf[1024];
+        size_t actualLen = 0;
+        size_t backspaces = 0;
+        int processed = vnkey_engine_process(
+            _engine, (uint32_t)' ',
+            outBuf, sizeof(outBuf), &actualLen, &backspaces, NULL);
+        if (processed && (backspaces > 0 || actualLen > 0)) {
+            /* Macro expanded: xóa từ cũ + chèn expansion */
+            if (_usePreedit) {
+                /* Preedit đã commit ở trên, xoá trực tiếp */
+                for (size_t i = 0; i < backspaces; i++) {
+                    [sender insertText:@"" replacementRange:NSMakeRange(NSNotFound, 1)];
+                }
+            } else {
+                /* Commit-inline: gửi backspace xoá từ cũ */
+                for (size_t i = 0; i < backspaces; i++) {
+                    /* Gửi Fn+Delete (forward delete không hoạt động), dùng deleteBackward */
+                    CGEventRef bsDown = CGEventCreateKeyboardEvent(NULL, kVK_Delete, true);
+                    CGEventRef bsUp = CGEventCreateKeyboardEvent(NULL, kVK_Delete, false);
+                    CGEventPost(kCGHIDEventTap, bsDown);
+                    CGEventPost(kCGHIDEventTap, bsUp);
+                    CFRelease(bsDown);
+                    CFRelease(bsUp);
+                }
+                /* Đợi backspace xử lý */
+                usleep(backspaces * 5000);
+            }
+            if (actualLen > 0) {
+                NSString *output = [[NSString alloc]
+                    initWithBytes:outBuf
+                           length:actualLen
+                         encoding:NSUTF8StringEncoding];
+                if (output) {
+                    [sender insertText:output
+                      replacementRange:NSMakeRange(NSNotFound, NSNotFound)];
+                }
+            }
+            return YES;
+        }
+        /* Không match macro → commit và để Space pass-through */
         vnkey_engine_soft_reset(_engine);
         return NO;
     }
@@ -185,25 +235,55 @@ static void removeLastChars(NSMutableString *str, NSUInteger count) {
         outBuf, sizeof(outBuf), &actualLen, &backspaces, NULL);
 
     if (processed) {
-        /* Xóa backspaces ký tự từ preedit */
-        removeLastChars(_preedit, backspaces);
-
-        /* Thêm đầu ra mới */
-        if (actualLen > 0) {
-            NSString *output = [[NSString alloc]
-                initWithBytes:outBuf
-                       length:actualLen
-                     encoding:NSUTF8StringEncoding];
-            if (output) {
-                [_preedit appendString:output];
+        if (_usePreedit) {
+            /* Chế độ preedit: cập nhật marked text */
+            removeLastChars(_preedit, backspaces);
+            if (actualLen > 0) {
+                NSString *output = [[NSString alloc]
+                    initWithBytes:outBuf
+                           length:actualLen
+                         encoding:NSUTF8StringEncoding];
+                if (output) {
+                    [_preedit appendString:output];
+                }
             }
+        } else {
+            /* Chế độ commit-inline: ghi trực tiếp không gạch chân */
+            /* Xóa ký tự cũ bằng backspace */
+            for (size_t i = 0; i < backspaces; i++) {
+                CGEventRef bsDown = CGEventCreateKeyboardEvent(NULL, kVK_Delete, true);
+                CGEventRef bsUp = CGEventCreateKeyboardEvent(NULL, kVK_Delete, false);
+                CGEventPost(kCGHIDEventTap, bsDown);
+                CGEventPost(kCGHIDEventTap, bsUp);
+                CFRelease(bsDown);
+                CFRelease(bsUp);
+            }
+            if (backspaces > 0) {
+                usleep(backspaces * 5000);
+            }
+            /* Chèn kết quả */
+            if (actualLen > 0) {
+                NSString *output = [[NSString alloc]
+                    initWithBytes:outBuf
+                           length:actualLen
+                         encoding:NSUTF8StringEncoding];
+                if (output) {
+                    [sender insertText:output
+                      replacementRange:NSMakeRange(NSNotFound, NSNotFound)];
+                }
+            }
+            return YES;
         }
     } else {
-        /* Engine không biến đổi, thêm ký tự thô vào preedit */
-        [_preedit appendFormat:@"%c", (char)ch];
+        if (_usePreedit) {
+            [_preedit appendFormat:@"%c", (char)ch];
+        } else {
+            /* Commit-inline: để hệ thống xử lý phím thường */
+            return NO;
+        }
     }
 
-    /* Ranh giới từ → commit ngay */
+    /* Preedit mode: ranh giới từ → commit ngay */
     if (vnkey_engine_at_word_beginning(_engine)) {
         [self commitPreedit:sender];
     } else {
@@ -288,7 +368,7 @@ static void removeLastChars(NSMutableString *str, NSUInteger count) {
     [super activateServer:sender];
     vnkey_engine_reset(_engine);
     [_preedit setString:@""];
-    loadPreferences(_engine, &_vietMode);
+    loadPreferences(_engine, &_vietMode, &_usePreedit);
 }
 
 - (void)deactivateServer:(id)sender {
@@ -349,6 +429,7 @@ static void removeLastChars(NSMutableString *str, NSUInteger count) {
 
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     [defaults setBool:_vietMode forKey:kVnKeyVietMode];
+    [defaults synchronize];
 }
 
 - (void)selectInputMethod:(id)sender {
@@ -361,6 +442,7 @@ static void removeLastChars(NSMutableString *str, NSUInteger count) {
 
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     [defaults setInteger:im forKey:kVnKeyInputMethod];
+    [defaults synchronize]; /* Đảm bảo ghi ngay lập tức */
 
     /* Thông báo các controller khác cập nhật kiểu gõ */
     [[NSNotificationCenter defaultCenter]
@@ -374,7 +456,7 @@ static void removeLastChars(NSMutableString *str, NSUInteger count) {
 }
 
 - (void)preferencesChanged:(NSNotification *)note {
-    loadPreferences(_engine, &_vietMode);
+    loadPreferences(_engine, &_vietMode, &_usePreedit);
 }
 
 @end

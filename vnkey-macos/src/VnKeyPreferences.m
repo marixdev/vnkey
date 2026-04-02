@@ -11,6 +11,9 @@ static NSString *const kVnKeySpellCheck    = @"VnKeySpellCheck";
 static NSString *const kVnKeyFreeMarking   = @"VnKeyFreeMarking";
 static NSString *const kVnKeyModernStyle   = @"VnKeyModernStyle";
 static NSString *const kVnKeyAutoRestore   = @"VnKeyAutoRestore";
+static NSString *const kVnKeyEdeMode       = @"VnKeyEdeMode";
+static NSString *const kVnKeyMacroEnabled  = @"VnKeyMacroEnabled";
+static NSString *const kVnKeyUsePreedit    = @"VnKeyUsePreedit";
 
 /* ==================== PreferencesController ==================== */
 
@@ -21,6 +24,9 @@ static NSString *const kVnKeyAutoRestore   = @"VnKeyAutoRestore";
 @property (nonatomic, strong) NSButton *freeMarkingBox;
 @property (nonatomic, strong) NSButton *modernStyleBox;
 @property (nonatomic, strong) NSButton *autoRestoreBox;
+@property (nonatomic, strong) NSButton *edeModeBox;
+@property (nonatomic, strong) NSButton *macroEnabledBox;
+@property (nonatomic, strong) NSButton *usePreeditBox;
 
 - (void)setupInView:(NSView *)contentView;
 
@@ -30,9 +36,9 @@ static NSString *const kVnKeyAutoRestore   = @"VnKeyAutoRestore";
 
 - (void)setupInView:(NSView *)contentView {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    CGFloat y = 220;
+    CGFloat y = 320;
     CGFloat leftMargin = 20;
-    CGFloat width = 300;
+    CGFloat width = 340;
 
     /* Tiêu đề */
     NSTextField *title = [NSTextField labelWithString:@"Tùy chỉnh VnKey"];
@@ -103,6 +109,42 @@ static NSString *const kVnKeyAutoRestore   = @"VnKeyAutoRestore";
                                     : NSControlStateValueOff;
     self.autoRestoreBox.tag = 4;
     [contentView addSubview:self.autoRestoreBox];
+    y -= 28;
+
+    /* Tiếng Tây Nguyên (Êđê) */
+    self.edeModeBox = [NSButton checkboxWithTitle:@"Tiếng Tây Nguyên (Êđê)"
+                                           target:self
+                                           action:@selector(optionChanged:)];
+    self.edeModeBox.frame = NSMakeRect(leftMargin, y, width, 20);
+    self.edeModeBox.state = [defaults boolForKey:kVnKeyEdeMode]
+                                ? NSControlStateValueOn
+                                : NSControlStateValueOff;
+    self.edeModeBox.tag = 5;
+    [contentView addSubview:self.edeModeBox];
+    y -= 28;
+
+    /* Gõ tắt (Auto-text) */
+    self.macroEnabledBox = [NSButton checkboxWithTitle:@"Gõ tắt (Auto-text)"
+                                                target:self
+                                                action:@selector(optionChanged:)];
+    self.macroEnabledBox.frame = NSMakeRect(leftMargin, y, width, 20);
+    self.macroEnabledBox.state = [defaults boolForKey:kVnKeyMacroEnabled]
+                                     ? NSControlStateValueOn
+                                     : NSControlStateValueOff;
+    self.macroEnabledBox.tag = 6;
+    [contentView addSubview:self.macroEnabledBox];
+    y -= 28;
+
+    /* Dùng preedit (gạch chân) */
+    self.usePreeditBox = [NSButton checkboxWithTitle:@"Gạch chân khi gõ (preedit)"
+                                              target:self
+                                              action:@selector(optionChanged:)];
+    self.usePreeditBox.frame = NSMakeRect(leftMargin, y, width, 20);
+    self.usePreeditBox.state = [defaults boolForKey:kVnKeyUsePreedit]
+                                   ? NSControlStateValueOn
+                                   : NSControlStateValueOff;
+    self.usePreeditBox.tag = 7;
+    [contentView addSubview:self.usePreeditBox];
     y -= 40;
 
     /* Phiên bản */
@@ -132,11 +174,15 @@ static NSString *const kVnKeyAutoRestore   = @"VnKeyAutoRestore";
         case 2: [defaults setBool:val forKey:kVnKeyFreeMarking]; break;
         case 3: [defaults setBool:val forKey:kVnKeyModernStyle]; break;
         case 4: [defaults setBool:val forKey:kVnKeyAutoRestore]; break;
+        case 5: [defaults setBool:val forKey:kVnKeyEdeMode]; break;
+        case 6: [defaults setBool:val forKey:kVnKeyMacroEnabled]; break;
+        case 7: [defaults setBool:val forKey:kVnKeyUsePreedit]; break;
     }
     [self notifyChange];
 }
 
 - (void)notifyChange {
+    [[NSUserDefaults standardUserDefaults] synchronize];
     [[NSNotificationCenter defaultCenter]
         postNotificationName:@"VnKeyPreferencesChanged" object:nil];
 }
@@ -149,7 +195,7 @@ static NSString *const kVnKeyAutoRestore   = @"VnKeyAutoRestore";
 static VnKeyPreferencesController *sPrefsController = nil;
 
 NSWindow *createPreferencesWindow(void) {
-    NSRect frame = NSMakeRect(0, 0, 360, 280);
+    NSRect frame = NSMakeRect(0, 0, 400, 380);
     NSWindow *window = [[NSWindow alloc]
         initWithContentRect:frame
                   styleMask:(NSWindowStyleMaskTitled |

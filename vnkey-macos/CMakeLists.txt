@@ -93,3 +93,9 @@ endif()
 install(TARGETS ${APP_NAME}
     BUNDLE DESTINATION "$ENV{HOME}/Library/Input Methods"
 )
+
+# Ad-hoc codesign sau build (XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY chỉ hoạt động với Xcode generator)
+add_custom_command(TARGET ${APP_NAME} POST_BUILD
+    COMMAND codesign --force --deep --sign - "$<TARGET_BUNDLE_DIR:${APP_NAME}>"
+    COMMENT "Ad-hoc codesign VnKey.app"
+)
