@@ -1,0 +1,128 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+<resheader name="resmimetype"><value>text/microsoft-resx</value></resheader><resheader name="version"><value>1.3</value></resheader><resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader><resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader><data name="$this.Icon" mimetype="application/x-microsoft.net.object.binary.base64"><value>AAEAAAD/////AQAAAAAAAAAMAgAAAFFTeXN0ZW0uRHJhd2luZywgVmVyc2lvbj00LjAuMC4wLCBD
+dWx0dXJlPW5ldXRyYWwsIFB1YmxpY0tleVRva2VuPWIwM2Y1ZjdmMTFkNTBhM2EFAQAAABNTeXN0
+ZW0uRHJhd2luZy5JY29uAgAAAAhJY29uRGF0YQhJY29uU2l6ZQcEAhNTeXN0ZW0uRHJhd2luZy5T
+aXplAgAAAAIAAAAJAwAAAAX8////E1N5c3RlbS5EcmF3aW5nLlNpemUCAAAABXdpZHRoBmhlaWdo
+dAAACAgCAAAAAAAAAAAAAAAPAwAAAL4QAAACAAABAAEAICAAAAEAIACoEAAAFgAAACgAAAAgAAAA
+QAAAAAEAIAAAAAAAgBAAAAAAAAAAAAAAAAAAAAAAAAD/////////////////////////////////
+/////v7+//7+/v/+/v7//v7+//7+/v/+/v7//v7+//7+/v/+/v7//v7+//7+/v/+/v7//v7+//7+
+/v/+/v7//v7+//7+/v/+/v7//v7+//7+/v///////////////////////////////////////v7+
+//7+/v/+/v7//f39//39/f/7+/v/+vr6//j4+P/29vb/9fX1//Pz8//y8vL/8fHx//Hx8f/x8fH/
+8fHx//Ly8v/z8/P/9PT0//X19f/29vb/+Pj4//n5+f/7+/v//Pz8//39/f/9/f3//v7+//7+/v//
+/////v7+//7+/v/9/f3/+/v7//j4+P/19fX/7+/v/+vr6//j4+P/3Nzc/9TU1P/Ozs7/x8fH/8PD
+w//BwcH/wcHB/8HBwf/Dw8P/xsbG/8jIyP/MzMz/z8/P/9PT0//Y2Nj/39/f/+bm5v/s7Oz/8fHx
+//f39//6+vr//Pz8//39/f/+/v7//f39//z8/P/6+vr/9fX1//Hx8f/p6en/4uLi/9jY2P/Q0ND/
+xsbG/76+vv+2trb/srKy/6+vr/+vr6//sLCw/7Kysv+1tbX/uLi4/7y8vP/AwMD/xsbG/8zMzP/V
+1dX/3Nzc/+Xl5f/s7Oz/8/Pz//f39//7+/v//Pz8//7+/v/+/v7//f39//z8/P/7+/v/+fn5//b2
+9v/z8/P/7u7u/+vr6//m5ub/4eHh/9zc3P/Z2dn/2NjY/9jY2P/X19f/2NjY/9ra2v/c3Nz/3t7e
+/+Hh4f/k5OT/6Ojo/+3t7f/w8PD/9fX1//f39//6+vr//Pz8//39/f/+/v7////////////+/v7/
+/v7+//7+/v/+/v7//v7+//39/f/9/f3//Pz8//v7+//7+/v/+vr6//n5+f/4+Pj/+Pj4//j4+P/4
++Pj/+fn5//n5+f/6+vr/+/v7//v7+//8/Pz//Pz8//39/f/9/f3//v7+//7+/v/+/v7//v7+//7+
+/v//////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////z8/P/r6+v/4eHh/9/f3//f39//39/f/9/f3//f
+39//39/f/9/f3//f39//39/f/9/f3//f39//39/f/9/f3//f39//39/f/9/f3//f39//39/f/9/f
+3//f39//5OTk//Pz8//+/v7//////////////////v7+//z8/P/g4OD/xMTE/76+vv/Dw8P/xsbG
+/8bGxv/Gxsb/xsbG/8bFxf/FxcX/xcXF/8XFxf/FxMT/xMTE/8TDxP/Ew8T/w8PD/8PDw//Dw8P/
+w8PD/8PDw//Dw8L/w8LC/8HBwf++vr7/urq6/87Ozv/t7e3//v7+///////9/f3/6Ojo/8HBwf/D
+w8P/1dXV/9zb2//e3t7/3d3d/9zc3P/b29r/2tnZ/9nZ2P/Y2Nj/2NfX/9fW1f/W1dX/1dTU/9TT
+0//U09L/09HR/9LR0P/R0ND/0dDP/9DPzv/Qzs7/z83N/8vKyf/Ew8P/vb29/8nJyf/4+Pj//v7+
+//n5+f/Nzc3/xcXF/93d3f/l5OT/4+Pj/+Ti4P/m49//6OTf/+fk3v/m5N7/5uPd/+bi3P/l4tz/
+5eHc/+Th3P/k4dz/4+Hc/+Ph3P/k4dz/5OHc/+Pg3P/i4N3/4uDf/9va2f/U0tL/0dDP/9DPzv/E
+xMP/urq6/+Tk5P/9/f3/9vb2/8nJyf/Pz8//5ubm/+Xl5f/m4db/7t69//Tht//14LL/9d+v//Td
+rP/03Kn/9Nym//Tcpv/03Kf/9Nyo//Xdqf/13ar/8Nyq/+rbq//t3Kz/9d6u//fkuP/57tP/9/by
+/+jn5//T0tH/0s/P/8rJyf+8vLz/3Nzc//39/f/29vb/ycnJ/9PT0//o6Oj/6OLZ/+zWsf/02qX/
+9duj/+/Sl//mxYv/4L2G/9+7g//hvID/58N//+/Lfv/wzH7/4cl+/7vBff+at3v/jrF3/5Cuc/+i
+snP/1cN6/+/Ngv/35bv/+vjy/97d3f/S0M//y8rK/728vP/b29v//f39//b29v/Jycn/1NTU/+rq
+6v/q4NL/7NWt//Xerf/v1KH/4L+R/+DAlf/evpL/3LmL/9m0hP/ZtIH/476A/+LJgP+oxIn/mcWV
+/5XBkv+QvIv/ibSA/4SueP+PrXP/x754//XXmP/69OT/4d/f/9PR0P/Mysr/vby8/9vb2//9/f3/
+9vb2/8nJyf/V1dX/6+vs/+vh0//t17H/8dis/+XHnv+aisv/AAD//+TJpf9MQt//Sj7a/9y5jP/Y
+tYT/wr+M/63Ysv+y2LT/AAD//2yHwP9VbMf/GiDt/4eti/+Or3f/4tCS//rx3f/g39//09HR/8zL
+yv+9vLz/29vb//39/f/29vb/ycnJ/9XV1f/t7e3/6+LV/+7Ytv/s06v/7Ne9/5+U2v8AAP//6dGz
+/01F5P9LQd7/4cOa/927jv/VwJX/yOPH/8Djxf8AAP//V2nY/xgd8v9kesj/ncSZ/421g//JyI7/
++u/a/+Df3//T09L/zczL/729vP/b29v//f39//b29v/Jycn/1tbW/+7u7//s49j/7tq7/+3Ws//z
+5tX/pJ3p/wAA///s28j/T0nr/01F5f/nz67/48We/97Emf/e7dr/1e/b/wAA//8EBP7/Pkjr/7LR
+v/+y1LL/l8CR/8nJjv/57tX/4N/f/9TT0//NzMz/vb29/9vb2//9/f3/9vb2/8nJyf/X19f/8PDw
+/+zl2f/t2r3/8d6///Lj0f+no/P/AAD//7Gn4P9EQPL/WlLo/+vXvf/Xw6z/yMCn/+Tx6v/m9+r/
+AAD//0xU8v8zOvL/sMjS/7vcvf+bw43/49CQ//nt0v/g397/1dTU/83NzP+9vb3/29vb//39/f/2
+9vb/ycnJ/9fX1//x8fL/7ubc/+3awP/479v/8OHJ/7214v9SUPj/pqPz/1la9/+crOT/kbLk/3yf
+5/93leb/iJzp/6277f8AAP//mqTx/4qU8P9ufOj/sNOk/8jIgf/01I//9+rP/+Df3v/V1NT/zs3N
+/729vf/b29v//f39//b29v/Jycn/2dnZ//Pz8//v593/7drD//v05v/8+Ov/8uTP//Dizv/x6N3/
+vtTs/46+8/+OvfT/hLHx/3mk7v9xkur/covo/wAA//+Kmt7/yuS//8DYpf/WzIX/7sx///LTjv/2
+6cz/4N/f/9bW1f/Ozc3/vb29/9vb2//9/f3/9vb2/8nJyf/a2tr/9fX1/+/o3//s28b/+/bq///8
+9f/+/PL/+/fp/9Xb3P+ny/H/uNn6/6PM+P8aI/3/FBv9/3aj7/9xm+z/JDH4/4qPyf/s1ZP/8tOQ
+//LRiv/xz4T/8tOP//boyP/g39//19bW/8/Ozv+9vb3/29vb//39/f/29vb/ycnJ/9vb2//29vf/
+8Ong/+zcyP/79+////74///99f///fP/xt3x/8nh+//I4vz/jKX7/wkL/v8ICv7/YYf1/3ms8P9t
+m+3/jafd//TdqP/12J3/8tSS//HSi//z1JP/9efH/+Dg3v/Y19f/z8/P/729vf/b29v//f39//b2
+9v/Jycn/3Nzc//j5+f/x6uL/7NzL//v38v////z///76///++P/L4PT/1uf7/9Dh/v9ES/7/Tl39
+/0xb/f8tPPv/hbT0/3is8f+Vtub/+O3R//rryf/45bz/9+Cv//Xbov/15sf/4eDf/9nY2P/Q0M//
+vb29/9vb2//9/f3/9vb2/8nJyf/d3d3/+vr7//Lr4//r3M3/+/j0/////v////z////6/+Hs9v/F
+2vj/ub/+/xcZ/v+jt/3/mbL8/xAU/v95mfn/hLPy/7zP4//88Nb//O/T//rtzf/66sj/9+Gy//Tm
+x//h4OD/2tnZ/9HQ0P+9vb3/29vb//39/f/29vb/ycnJ/97e3v/8/f3/8+vj/+rZyf/59PD//v7+
+//////////7//f38/9bk9/98ivr/YGf8/93s/f/T5/3/WGT8/2+F+P+80+v/8/Hk//703//98tv/
+/PHW//vu0P/447X/9ObJ/+Dg3//b29v/0dHR/729vf/b29v//f39//b29v/Jycn/3t7e//39/f/2
+8Or/6dfG//Dk2f/7+PX//v7+///////+/v7/+/z8/97o+P/O3/b/x9r1/8LX9f/C2PH/z9/t//Tz
+6P/99uX//vXh//3z3f/88Nb/+ejC//bgsP/v5tD/3t7e/9zc2//S0tL/vb29/9vb2//9/f3/9vb2
+/8nJyf/X19f/+/v7//38+//17uf/69vL/+zczv/x5tz/8ujf//Pp3v/y6dz/8ujY//Pn1v/v5NL/
+7uLQ//HjzP/y48n/8uLG//Lhw//y37//8d67//Dct//v2rX/6d7L/+Hg3f/e3t7/3d3d/9HR0f+9
+vb3/3d3d//39/f/5+fn/z8/P/8jIyP/s7Oz///////7+/v/6+PX/9/Pv//by7f/08O3/8+/r//Lu
+6v/x7ej/8Ozn/+7r5f/t6eT/7Oji/+vm4f/q5d//6eXd/+jj2//m4dr/5eHZ/+Tg2//h4OH/4ODg
+/9/f3//d3dz/yMfH/7u7u//p6en//v7+//7+/v/t7e3/xcXF/8XFxf/g4OD/7+/v//Ly8v/y8vL/
+8fHx//Hx8f/v7+//7u7u/+zs7P/r6+v/6enp/+jo6P/m5uf/5eXl/+Tk5P/j4+P/4uLi/+Dg4P/f
+39//3t7e/93d3f/c29v/09PT/8fHx/+/v7//0tLS//v7+//+/v7//v7+//39/f/r6+v/0dHR/8XF
+xf/Hx8f/yMjI/8jIyP/IyMj/yMjI/8jIyP/Hx8f/x8fH/8fHx//Hx8f/x8fH/8fHx//Gxsb/xsbG
+/8bGxv/Gxsb/xsbG/8bGxv/Gxsb/xsXF/8XFxf/Dw8P/xcXF/93d3f/19fX//v7+////////////
+///////////9/f3/8/Pz/+zs7P/r6+v/6+vr/+vr6//r6+v/6+vr/+vr6//r6+v/6+vr/+vr6//r
+6+v/6+vr/+vr6//r6+v/6+vr/+vr6//r6+v/6+vr/+vr6//r6+v/6+vr/+/v7//5+fn/////////
+////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////
+////////////////////////////////AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAL</value></data><data name="richTextBox1.Text" xml:space="preserve"><value>VnKey là bộ gõ dân tộc Việt đầu tiên xây dựng trên môi trường Unicode.
+Hỗ trợ người dùng gõ tiếng Việt tiếng dân tộc thiểu số Việt Nam như: Êđê, Jarai, M'Nông, K'Ho, Xê đăng, Sán chỉ vv....
+VnKey thực thi rất hiệu quả trên môi trường Windows 32/64 Bit của Microsoft.
+====================================================
+Tác giả: Trần Thanh Bình
+Điện thoại: 0976765175 - (0262) 3924789
+Email: thanhbinh@vietsid.com
+Số tài khoản: 23101975
+Ngân hàng: TMCP Việt Á - CN Buôn Ma Thuột
+Ủng hộ tác giả: 01 ly cà phê (25.000 đồng) để sở hữu bộ gõ và từ điển Tây nguyên
+Chuyển khoản vui lòng nhập địa chỉ Email để nhận link tải (download) trọn bộ
+====================================================
+B + 9 = Ẃ		C + 8 = Č		E + 8 = Ĕ		I  +  8 = Ĭ
+N + 4 = Ñ		O + 8 = Ŏ		U + 8 = Ŭ	E + 6 + 8 = Ẅ
+A + 6 + 8  =  Ẁ		O + 6 + 8 =   Ö		O + 7 + 8 =   Ő	U + 7 + 8 = Ů
+++++++++++++++++++++++++++++++++++++++++++++++++++++
+B + B = Ẃ		C + W = Č		E + W = Ĕ	I  +  W = Ĭ
+N + X = Ñ		O + Z = Ŏ		U + Z = Ŭ	E + E + W = Ẅ
+A + A +W  =  Ẁ		O + O + W = Ö		O + W + W = Ő	U + W + W = Ů</value></data>
+  </root>

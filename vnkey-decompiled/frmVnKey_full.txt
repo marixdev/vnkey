@@ -1,0 +1,2586 @@
+﻿using System;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Drawing;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Threading;
+using System.Windows.Forms;
+using System.Xml;
+using Microsoft.Win32;
+using VnKey.Properties;
+using gma.System.Windows;
+
+namespace VnKey;
+
+public class frmVnKey : Form
+{
+	private enum InputType
+	{
+		INPUT_MOUSE,
+		INPUT_KEYBOARD,
+		INPUT_HARDWARE
+	}
+
+	[Flags]
+	private enum MOUSEEVENTF
+	{
+		MOVE = 1,
+		LEFTDOWN = 2,
+		LEFTUP = 4,
+		RIGHTDOWN = 8,
+		RIGHTUP = 0x10,
+		MIDDLEDOWN = 0x20,
+		MIDDLEUP = 0x40,
+		XDOWN = 0x80,
+		XUP = 0x100,
+		WHEEL = 0x800,
+		VIRTUALDESK = 0x4000,
+		ABSOLUTE = 0x8000
+	}
+
+	[Flags]
+	private enum KEYEVENTF
+	{
+		EXTENDEDKEY = 1,
+		KEYUP = 2,
+		UNICODE = 4,
+		SCANCODE = 8
+	}
+
+	private struct MOUSEINPUT
+	{
+		public int dx;
+
+		public int dy;
+
+		public int mouseData;
+
+		public int dwFlags;
+
+		public int time;
+
+		public IntPtr dwExtraInfo;
+	}
+
+	private struct KEYBDINPUT
+	{
+		public short wVk;
+
+		public short wScan;
+
+		public int dwFlags;
+
+		public int time;
+
+		public IntPtr dwExtraInfo;
+	}
+
+	private struct HARDWAREINPUT
+	{
+		public int uMsg;
+
+		public short wParamL;
+
+		public short wParamH;
+	}
+
+	[StructLayout(LayoutKind.Explicit)]
+	private struct INPUT
+	{
+		[FieldOffset(0)]
+		public int type;
+
+		[FieldOffset(4)]
+		public MOUSEINPUT mi;
+
+		[FieldOffset(4)]
+		public KEYBDINPUT ki;
+
+		[FieldOffset(4)]
+		public HARDWAREINPUT hi;
+	}
+
+	[StructLayout(LayoutKind.Explicit)]
+	private struct INPUT64
+	{
+		[FieldOffset(0)]
+		public int type;
+
+		[FieldOffset(8)]
+		public MOUSEINPUT mi;
+
+		[FieldOffset(8)]
+		public KEYBDINPUT ki;
+
+		[FieldOffset(8)]
+		public HARDWAREINPUT hi;
+	}
+
+	public enum CF
+	{
+		Text = 1,
+		Bitmap = 2,
+		MetaFilePict = 3,
+		Sylk = 4,
+		Dif = 5,
+		Tiff = 6,
+		OemText = 7,
+		Dib = 8,
+		Palette = 9,
+		Pendata = 10,
+		Riff = 11,
+		Wave = 12,
+		UnicodeText = 13,
+		EnhMetaFile = 14,
+		HDrop = 15,
+		Locale = 16,
+		Dibv5 = 17,
+		OwnerDisplay = 128,
+		DspText = 129,
+		DspBitmap = 130,
+		DspMetaFilePict = 131,
+		DspEnhMetaFile = 142,
+		PrivateFirst = 512,
+		PrivateLast = 767,
+		GdiObjFirst = 768,
+		GdiObjLast = 1023
+	}
+
+	private enum KeyModifiers : uint
+	{
+		None = 0u,
+		Alt = 1u,
+		Control = 2u,
+		Shift = 4u
+	}
+
+	private RegistryKey rkApp = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", writable: true);
+
+	private string appDatapath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+
+	private string exeDatapath = Application.StartupPath + "\\BangMa\\";
+
+	private string[] unicodeDungSan = new string[170]
+	{
+		"a", "á", "à", "a", "?", "?", "a", "?", "?", "?",
+		"?", "?", "â", "?", "?", "?", "?", "?", "e", "é",
+		"è", "?", "?", "?", "ê", "?", "?", "?", "?", "?",
+		"i", "í", "ì", "i", "?", "?", "o", "ó", "ò", "o",
+		"?", "?", "ô", "?", "?", "?", "?", "?", "o", "?",
+		"?", "?", "?", "?", "u", "ú", "ù", "u", "?", "?",
+		"u", "?", "?", "?", "?", "?", "y", "y", "?", "?",
+		"?", "?", "d", "A", "A", "A", "A", "?", "?", "A",
+		"?", "?", "?", "?", "?", "A", "?", "?", "?", "?",
+		"?", "E", "É", "E", "?", "?", "?", "E", "?", "?",
+		"?", "?", "?", "I", "I", "I", "I", "?", "?", "O",
+		"O", "O", "O", "?", "?", "O", "?", "?", "?", "?",
+		"?", "O", "?", "?", "?", "?", "?", "U", "U", "U",
+		"U", "?", "?", "U", "?", "?", "?", "?", "?", "Y",
+		"Y", "?", "?", "?", "?", "D", "?", "?", "c", "e",
+		"?", "i", "ñ", "o", "ö", "o", "u", "u", "?", "?",
+		"C", "E", "?", "I", "Ñ", "O", "Ö", "O", "U", "U"
+	};
+
+	private char[] vni = new char[16]
+	{
+		'0', '1', '2', '4', '3', '5', '6', ' ', ' ', ' ',
+		' ', ' ', '7', '8', '9', '9'
+	};
+
+	private char[] telex = new char[16]
+	{
+		'z', 's', 'f', 'x', 'r', 'j', ' ', 'a', 'e', 'o',
+		' ', 'w', ' ', ' ', 'd', 'b'
+	};
+
+	private char[] telexMoRong = new char[16]
+	{
+		'z', 's', 'f', 'x', 'r', 'j', ' ', 'a', 'e', 'o',
+		'w', ' ', ' ', ' ', 'd', 'b'
+	};
+
+	private char[] VIQR = new char[16]
+	{
+		'0', '\'', '`', '~', '?', '.', '^', ' ', ' ', ' ',
+		' ', ' ', '+', '(', 'd', 'b'
+	};
+
+	private string s = "";
+
+	private string s1 = "";
+
+	private string s2 = "";
+
+	private string cache = "";
+
+	private string gotat = "";
+
+	private string theoDoi1 = "";
+
+	private string theoDoi2 = "";
+
+	private bool viet = true;
+
+	private int ngatTamThoi = -1;
+
+	private Pen pen = new Pen(Color.Black, 6f);
+
+	private const string version = "4.0";
+
+	private const int cross = 4;
+
+	private const int cross64 = 8;
+
+	private string[] duongDan;
+
+	private TiengViet a;
+
+	private bool controlV;
+
+	private bool alt;
+
+	private bool shiftL;
+
+	private bool shiftR;
+
+	private bool another;
+
+	private bool control;
+
+	private bool dragging;
+
+	private bool luuGoTat;
+
+	private bool shiftTruoc;
+
+	private bool CtrlShift;
+
+	private Point pointClicked;
+
+	private int i;
+
+	private int xuat;
+
+	private IContainer components = null;
+
+	private NotifyIcon notifyIcon1;
+
+	private ContextMenuStrip contextMenuStrip1;
+
+	private CheckBox chbBoDauKieuMoi;
+
+	private CheckBox chbKhoiDongCungWin;
+
+	private ToolStripMenuItem thoátToolStripMenuItem;
+
+	private CheckBox chbBatHoiThoaiKhiKhoiDong;
+
+	private TabControl tabControl1;
+
+	private TabPage tabPage1;
+
+	private TabPage tabPage3;
+
+	private Button bttClose;
+
+	private ToolStripMenuItem tsmThoat;
+
+	private RichTextBox richTextBox1;
+
+	private TabPage tabPage4;
+
+	private TextBox txtTheodoi2;
+
+	private TextBox textBox2;
+
+	private TextBox txtTheodoi1;
+
+	private Label label3;
+
+	private Label label2;
+
+	private ToolStripMenuItem tsmdotNetKey;
+
+	private ToolStripMenuItem tsmHuongDan;
+
+	private ToolStripSeparator toolStripSeparator1;
+
+	private ToolStripSeparator toolStripSeparator2;
+
+	private ToolStripComboBox tscBangMa;
+
+	private ToolStripComboBox tscKieuGo;
+
+	private ToolStripSeparator toolStripSeparator3;
+
+	private ToolStripMenuItem tsmBoDauKieuMoi;
+
+	private ToolStripMenuItem tsmKhoiDongCungWin;
+
+	private TabPage tabPage5;
+
+	private DataGridView grdGotat;
+
+	private TextBox txtBang;
+
+	private TextBox txtThayThe;
+
+	private Button btnXoa;
+
+	private Button btnThem;
+
+	private Button btnSua;
+
+	private DataGridViewTextBoxColumn Column1;
+
+	private DataGridViewTextBoxColumn Column2;
+
+	private CheckBox chbKhongCanCach;
+
+	private CheckBox chbGoTatKhiTatTiengViet;
+
+	private CheckBox chbChoPhepGoTat;
+
+	private ToolStripSeparator toolStripSeparator4;
+
+	private ToolStripMenuItem tsmBangGoTat;
+
+	private Button btnKiemTraCapNhat;
+
+	private TextBox txtKiemTraCapNhat;
+
+	private CheckBox chbSuDungSendInput;
+
+	private GroupBox groupBox3;
+
+	private GroupBox groupBox2;
+
+	private GroupBox groupBox1;
+
+	private ToolStripMenuItem tsmSuDungSendInput;
+
+	private ToolStripMenuItem tsmTuyChonKhac;
+
+	private CheckBox chbBoDauTrongAutoComplete;
+
+	private ToolStripMenuItem tsmboDauTrongAutocomplete;
+
+	private Button btnThietLapSan1;
+
+	private Button btnThuMucThietLap;
+
+	private Button btnChuyenMa;
+
+	private Button btnHuongDan;
+
+	private ToolStripMenuItem tmsChuyenMa;
+
+	private CheckBox chbBatTheoDoi;
+
+	private GroupBox groupBox4;
+
+	private RadioButton rdbAltZ;
+
+	private RadioButton rdbCtrlShift;
+
+	private ComboBox cbbSetting;
+
+	private Button btnLuu;
+
+	private ComboBox cbbPhimTat;
+
+	private System.Windows.Forms.Timer timer1;
+
+	private ComboBox cbbKTChinhTa;
+
+	private Label label4;
+
+	private ToolStripComboBox tscKTChinhTa;
+
+	private ToolStripMenuItem tsRestart;
+
+	private ComboBox CbbKieuGo;
+
+	private ComboBox CbbBangma;
+
+	private ToolStripMenuItem tsDangky;
+
+	private ToolStripSeparator toolStripSeparator5;
+
+	public frmVnKey()
+	{
+		InitializeComponent();
+		UserActivityHook userActivityHook = new UserActivityHook(InstallMouseHook: false, InstallKeyboardHook: true);
+		userActivityHook.KeyDown += MyKeyDown;
+		userActivityHook.KeyPress += MyKeyPress;
+		userActivityHook.KeyUp += MyKeyUp;
+		Control.CheckForIllegalCrossThreadCalls = false;
+		a = new TiengViet(unicodeDungSan, vni);
+		CbbBangma.SelectedIndex = 0;
+		CbbKieuGo.SelectedIndex = 0;
+		notifyIcon1.Icon = Resources.icon32V;
+		cbbSetting.SelectedIndex = 0;
+		if (Directory.Exists(exeDatapath))
+		{
+			duongDan = Directory.GetFiles(exeDatapath, "*.txt");
+			Array.Sort(duongDan);
+			for (i = 0; i < duongDan.Length; i++)
+			{
+				CbbBangma.Items.Add(Path.GetFileNameWithoutExtension(duongDan[i]));
+				tscBangMa.Items.Add(Path.GetFileNameWithoutExtension(duongDan[i]));
+			}
+		}
+		cbbPhimTat.SelectedIndex = cbbPhimTat.Items.Count - 1;
+		try
+		{
+			if (!Directory.Exists(appDatapath + "\\VnKey"))
+			{
+				Directory.CreateDirectory(appDatapath + "\\VnKey");
+			}
+			s1 = appDatapath + "\\VnKey\\VnKey.xml";
+			XmlDocument xmlDocument = new XmlDocument();
+			xmlDocument.Load(s1);
+			if (xmlDocument.DocumentElement["bat"].InnerText == "0")
+			{
+				viet = false;
+				notifyIcon1.Icon = Resources.icon32E;
+			}
+			CbbKieuGo.SelectedIndex = int.Parse(xmlDocument.DocumentElement["kieuGo"].InnerText);
+			CbbBangma.SelectedIndex = int.Parse(xmlDocument.DocumentElement["bangMa"].InnerText);
+			chbBoDauKieuMoi.Checked = xmlDocument.DocumentElement["boDauKieuMoi"].InnerText != "0";
+			chbBatHoiThoaiKhiKhoiDong.Checked = xmlDocument.DocumentElement["batHoiThoaiKhiKhoiDong"].InnerText != "0";
+			if (xmlDocument.DocumentElement["kiemTraChinhTa"].InnerText == "0")
+			{
+				cbbKTChinhTa.SelectedIndex = 0;
+			}
+			else if (xmlDocument.DocumentElement["kiemTraChinhTa"].InnerText == "1")
+			{
+				cbbKTChinhTa.SelectedIndex = 1;
+			}
+			else
+			{
+				cbbKTChinhTa.SelectedIndex = 2;
+			}
+			chbChoPhepGoTat.Checked = !(xmlDocument.DocumentElement["choPhepGoTat"].InnerText == "0");
+			chbGoTatKhiTatTiengViet.Checked = xmlDocument.DocumentElement["goTatKhiTatTiengViet"].InnerText != "0";
+			chbKhongCanCach.Checked = xmlDocument.DocumentElement["khongCanCach"].InnerText != "0";
+			chbSuDungSendInput.Checked = xmlDocument.DocumentElement["sendInput"].InnerText != "0";
+			chbBoDauTrongAutoComplete.Checked = xmlDocument.DocumentElement["boDauTrongAutocomplete"].InnerText != "0";
+			chbBatTheoDoi.Checked = xmlDocument.DocumentElement["tatTheoDoi"].InnerText != "0";
+			chbKhoiDongCungWin.Checked = !(xmlDocument.DocumentElement["KhoiDongCungWin"].InnerText == "0");
+			if (xmlDocument.DocumentElement["phimChuyen"].InnerText != "0")
+			{
+				rdbAltZ.Checked = true;
+				if (int.TryParse(xmlDocument.DocumentElement["phimChuyen"].InnerText, out var result) && result > 0 && result <= cbbPhimTat.Items.Count)
+				{
+					cbbPhimTat.SelectedIndex = result - 1;
+				}
+			}
+			else
+			{
+				rdbCtrlShift.Checked = true;
+			}
+		}
+		catch
+		{
+			chbKhoiDongCungWin.Checked = true;
+			cbbKTChinhTa.SelectedIndex = 1;
+		}
+		if (!File.Exists(appDatapath + "\\VnKey\\GoTat.dat"))
+		{
+			File.WriteAllText(appDatapath + "\\VnKey\\GoTat.dat", "chxh\tC?ng hòa xa h?i ch? nghia Vi?t Nam\r\ndltd\tD?c l?p - T? do - H?nh phúc");
+		}
+		StreamReader streamReader = new StreamReader(appDatapath + "\\VnKey\\GoTat.dat");
+		while ((s = streamReader.ReadLine()) != null)
+		{
+			DataGridViewRowCollection rows = grdGotat.Rows;
+			object[] values = s.Split('\t');
+			rows.Add(values);
+		}
+		streamReader.Close();
+	}
+
+	[DllImport("user32.dll")]
+	private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+	[DllImport("user32.dll", SetLastError = true)]
+	private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+	[DllImport("user32.dll", SetLastError = true)]
+	private static extern uint SendInput(uint nInputs, INPUT64[] pInputs, int cbSize);
+
+	[DllImport("User32.dll")]
+	public static extern bool OpenClipboard(IntPtr hWnd);
+
+	[DllImport("User32.dll")]
+	public static extern IntPtr SetClipboardData(CF Format, IntPtr hMem);
+
+	[DllImport("User32.dll")]
+	public static extern bool EmptyClipboard();
+
+	[DllImport("User32.dll")]
+	public static extern bool CloseClipboard();
+
+	private void sendUnicode(string s)
+	{
+		if (IntPtr.Size == 4)
+		{
+			INPUT[] array = new INPUT[s.Length * 2];
+			for (int i = 0; i < s.Length; i++)
+			{
+				array[i * 2].type = 1;
+				array[i * 2].ki.wVk = 0;
+				array[i * 2].ki.wScan = (short)s[i];
+				array[i * 2].ki.dwFlags = 4;
+				array[i * 2 + 1] = array[i * 2];
+				array[i * 2 + 1].ki.dwFlags = 6;
+			}
+			int num = (int)SendInput((uint)array.Length, array, Marshal.SizeOf((object)array[0]));
+		}
+		else
+		{
+			INPUT64[] array2 = new INPUT64[s.Length * 2];
+			for (int j = 0; j < s.Length; j++)
+			{
+				array2[j * 2].type = 1;
+				array2[j * 2].ki.wVk = 0;
+				array2[j * 2].ki.wScan = (short)s[j];
+				array2[j * 2].ki.dwFlags = 4;
+				array2[j * 2 + 1] = array2[j * 2];
+				array2[j * 2 + 1].ki.dwFlags = 6;
+			}
+			int num2 = (int)SendInput((uint)array2.Length, array2, Marshal.SizeOf((object)array2[0]));
+		}
+	}
+
+	private void sendAnsi(Keys k)
+	{
+		if (IntPtr.Size == 4)
+		{
+			INPUT iNPUT = new INPUT
+			{
+				type = 1,
+				ki = 
+				{
+					wVk = (short)k
+				}
+			};
+			INPUT iNPUT2 = iNPUT;
+			iNPUT2.ki.dwFlags = 2;
+			int num = (int)SendInput(2u, new INPUT[2] { iNPUT, iNPUT2 }, Marshal.SizeOf((object)iNPUT));
+		}
+		else
+		{
+			INPUT64 iNPUT3 = new INPUT64
+			{
+				type = 1,
+				ki = 
+				{
+					wVk = (short)k
+				}
+			};
+			INPUT64 iNPUT4 = iNPUT3;
+			iNPUT4.ki.dwFlags = 2;
+			int num2 = (int)SendInput(2u, new INPUT64[2] { iNPUT3, iNPUT4 }, Marshal.SizeOf((object)iNPUT3));
+		}
+	}
+
+	private void SetClipboardAPI(string s)
+	{
+		OpenClipboard(IntPtr.Zero);
+		EmptyClipboard();
+		SetClipboardData(CF.UnicodeText, Marshal.StringToCoTaskMemUni(s));
+		CloseClipboard();
+	}
+
+	private void MyKeyPress(object sender, KeyPressEventArgs e)
+	{
+		try
+		{
+			bool flag = a.KiemTraKetThucTu(e.KeyChar);
+			if (goTat(e.KeyChar))
+			{
+				e.Handled = true;
+				return;
+			}
+			if (controlV || !viet)
+			{
+				controlV = false;
+				return;
+			}
+			if (!txtTheodoi1.Focused)
+			{
+				if (theoDoi1.Length >= 100)
+				{
+					theoDoi1 = theoDoi1.Substring(50, theoDoi1.Length - 50);
+				}
+				if (e.KeyChar == '\b')
+				{
+					theoDoi1 += "\\b";
+				}
+				else if (e.KeyChar == '\t')
+				{
+					theoDoi1 += "\\t";
+				}
+				else if (e.KeyChar == '\r')
+				{
+					theoDoi1 += "\\n";
+				}
+				else if (e.KeyChar == '\\')
+				{
+					theoDoi1 += "\\\\";
+				}
+				else
+				{
+					theoDoi1 += e.KeyChar;
+				}
+				if (tabControl1.SelectedIndex == 4 && base.Visible && chbBatTheoDoi.Checked)
+				{
+					txtTheodoi1.Text = theoDoi1;
+				}
+			}
+			if (!control && (shiftL || shiftR) && !alt && e.KeyChar == ' ' && !shiftTruoc)
+			{
+				if (s2 != null && s2 != "" && s2 != s1)
+				{
+					e.Handled = true;
+					XuatTiengViet(s2, s1, autocomplete: true);
+					s1 = (cache = (s2 = (gotat = "")));
+					ngatTamThoi = 0;
+				}
+				return;
+			}
+			shiftTruoc = shiftL || shiftR;
+			if (a.KiemtraKetthucPhimGo(s2, s))
+			{
+				s = (s1 = (cache = (s2 = (gotat = ""))));
+				a.chu.Reset();
+				a.ResetEdeState();
+				a.ResetMyStack();
+			}
+			if (a.KiemTraKetThucTu(e.KeyChar))
+			{
+				if (e.KeyChar == '\r')
+				{
+					if (cbbKTChinhTa.SelectedIndex != 0 && !a.KiemTraChinhTa() && s1 != s2 && (a.chu.trungdau < 0 || a.KiemTraDauMuD()))
+					{
+						XuatTiengViet(s2, s1, autocomplete: false);
+					}
+					cache = (s1 = (s2 = (gotat = "")));
+					ngatTamThoi = -1;
+					a.ResetEdeState();
+					a.ResetMyStack();
+				}
+				else if (e.KeyChar == '\b')
+				{
+					if (!control && !alt && (shiftL || shiftR))
+					{
+						s = (s1 = (s2 = (cache = (gotat = ""))));
+					}
+					else if (s2 == s1 && s2 != "")
+					{
+						s2 = s2.Remove(s2.Length - 1);
+						s = a.Convert(s2);
+						e.Handled = true;
+						XuatTiengViet(s, s1, autocomplete: true);
+						s1 = s;
+					}
+					else if (s2 == "")
+					{
+						i = cache.Length - 2;
+						while (i >= 0 && !a.KiemTraKetThucTu(cache[i]))
+						{
+							i--;
+						}
+						if (i < 0)
+						{
+							if (cache != "")
+							{
+								s2 = cache.Remove(cache.Length - 1);
+								cache = "";
+								gotat = s2;
+							}
+							else
+							{
+								cache = (s2 = "");
+							}
+						}
+						else
+						{
+							s2 = cache.Substring(i + 1, cache.Length - i - 2);
+							cache = cache.Remove(i + 1);
+							gotat = s2;
+						}
+						s1 = a.Convert(s2);
+						if (cbbKTChinhTa.SelectedIndex != 0 && !a.KiemTraChinhTa() && (a.chu.trungdau < 0 || a.KiemTraDauMuD()))
+						{
+							e.Handled = true;
+							XuatTiengViet(s1, s2, autocomplete: true);
+						}
+					}
+					else if (a.chu.amCuoi != "")
+					{
+						int num = s2.LastIndexOf(a.chu.amCuoi[a.chu.amCuoi.Length - 1]);
+						if (num >= 0)
+						{
+							s2 = s2.Remove(num, 1);
+						}
+						s = a.Convert(s2);
+						e.Handled = true;
+						XuatTiengViet(s, s1, autocomplete: true);
+						s1 = s;
+					}
+					else if (a.chu.nguyenAm != "")
+					{
+						a.chu.nguyenAm = a.chu.nguyenAm.Remove(a.chu.nguyenAm.Length - 1);
+						if (a.chu.nguyenAm == "" && (a.chu.amDau.ToLower() == "gi" || a.chu.amDau.ToLower() == "qu"))
+						{
+							a.chu.nguyenAm = a.chu.amDau[1].ToString();
+							a.chu.amDau = a.chu.amDau[0].ToString();
+						}
+						s2 = a.ConvertNguoc();
+						s = a.Convert(s2);
+						e.Handled = true;
+						XuatTiengViet(s, s1, autocomplete: true);
+						s1 = s;
+					}
+					else if (a.chu.amDau != "")
+					{
+						a.chu.amDau = a.chu.amDau.Remove(a.chu.amDau.Length - 1);
+						s2 = a.ConvertNguoc();
+						s = a.Convert(s2);
+						e.Handled = true;
+						XuatTiengViet(s, s1, autocomplete: true);
+						s1 = s;
+					}
+					else
+					{
+						a.chu.amDau = (s1 = (s2 = ""));
+					}
+					if (ngatTamThoi < 0)
+					{
+						a.ResetEdeState();
+						return;
+					}
+					ngatTamThoi--;
+				}
+				else
+				{
+					cache = cache + s2 + e.KeyChar;
+					if (cache.Length > 100)
+					{
+						cache = cache.Substring(50);
+					}
+					if (cbbKTChinhTa.SelectedIndex != 0 && !a.KiemTraChinhTa() && s1 != s2 && (a.chu.trungdau < 0 || a.KiemTraDauMuD()))
+					{
+						XuatTiengViet(s2, s1, autocomplete: true);
+					}
+					s = (s1 = (s2 = ""));
+					ngatTamThoi = -1;
+				}
+				s = (s1 = (cache = (s2 = (gotat = ""))));
+				a.chu.Reset();
+				a.ResetEdeState();
+				a.ResetMyStack();
+			}
+			else if (ngatTamThoi >= 0)
+			{
+				ngatTamThoi++;
+			}
+			else if (a.kieuGo[13].ToString().ToLower() == e.KeyChar.ToString().ToLower() && s1.Length >= 2 && !a.KiemTraKetThucTu(s1[s1.Length - 2]) && !a.KiemTraNguyenAm(s1[s1.Length - 2]) && "cC".IndexOf(s1[s1.Length - 1]) >= 0)
+			{
+				if (s1[s1.Length - 1] == 'c')
+				{
+					s = a.bangMa[148];
+				}
+				else if (s1[s1.Length - 1] == 'C')
+				{
+					s = a.bangMa[160];
+				}
+				e.Handled = true;
+				XuatTiengViet(s, "c", autocomplete: true);
+				a.chu.C8 = true;
+				a.chu.amDau = s1[s1.Length - 1].ToString();
+				s2 = (cache = (gotat = s1[s1.Length - 1].ToString() + e.KeyChar));
+				s1 = s;
+				a.Convert(s2);
+			}
+			else if (a.kieuGo[14].ToString().ToLower() == e.KeyChar.ToString().ToLower() && s1.Length >= 2 && !a.KiemTraKetThucTu(s1[s1.Length - 2]) && !a.KiemTraNguyenAm(s1[s1.Length - 2]) && "dD".IndexOf(s1[s1.Length - 1]) >= 0)
+			{
+				if (s1[s1.Length - 1] == 'd')
+				{
+					s = a.bangMa[72];
+				}
+				else if (s1[s1.Length - 1] == 'D')
+				{
+					s = a.bangMa[145];
+				}
+				e.Handled = true;
+				XuatTiengViet(s, "d", autocomplete: true);
+				a.chu.D9 = true;
+				a.chu.amDau = s1[s1.Length - 1].ToString();
+				s2 = (cache = (gotat = s1[s1.Length - 1].ToString() + e.KeyChar));
+				s1 = s;
+				a.Convert(s2);
+			}
+			else if (a.kieuGo[14].ToString().ToLower() == e.KeyChar.ToString().ToLower() && s2.Length >= 2 && s2.Substring(s2.Length - 2).ToLower() == "dd")
+			{
+				e.Handled = true;
+				XuatTiengViet(s2[s2.Length - 2].ToString() + e.KeyChar, string.Empty, autocomplete: true);
+				s2 = (s1 = (cache = (gotat = e.KeyChar.ToString())));
+				a.Convert(s2);
+			}
+			else if (a.kieuGo[15].ToString().ToLower() == e.KeyChar.ToString().ToLower() && s1.Length >= 2 && !a.KiemTraKetThucTu(s1[s1.Length - 2]) && !a.KiemTraNguyenAm(s1[s1.Length - 2]) && "bB".IndexOf(s1[s1.Length - 1]) >= 0)
+			{
+				if (s1[s1.Length - 1] == 'b')
+				{
+					s = a.bangMa[147];
+				}
+				else if (s1[s1.Length - 1] == 'B')
+				{
+					s = a.bangMa[159];
+				}
+				e.Handled = true;
+				XuatTiengViet(s, "b", autocomplete: true);
+				a.chu.B9 = true;
+				a.chu.amDau = s1[s1.Length - 1].ToString();
+				s2 = (cache = (gotat = s1[s1.Length - 1].ToString() + e.KeyChar));
+				s1 = s;
+				a.Convert(s2);
+			}
+			else if (a.kieuGo[15].ToString().ToLower() == e.KeyChar.ToString().ToLower() && s2.Length >= 2 && s2.Substring(s2.Length - 2).ToLower() == "bb")
+			{
+				e.Handled = true;
+				XuatTiengViet(s2[s2.Length - 2].ToString() + e.KeyChar, string.Empty, autocomplete: true);
+				s2 = (s1 = (cache = (gotat = e.KeyChar.ToString())));
+				a.Convert(s2);
+			}
+			else
+			{
+				s2 += e.KeyChar;
+				s = a.Convert(s2);
+				if (cbbKTChinhTa.SelectedIndex == 0 && a.KiemTraNguyenAm(e.KeyChar) && (a.chu.amCuoi != "" || a.chu.trungdau >= 0) && s == s1 + e.KeyChar)
+				{
+					s = (s1 = (s2 = e.KeyChar.ToString()));
+					cache = "";
+					a.Convert(s);
+				}
+				else if (s != null && s != "" && s != s1 + e.KeyChar)
+				{
+					e.Handled = true;
+					XuatTiengViet(s, s1, autocomplete: true);
+					s1 = s;
+				}
+				else
+				{
+					s1 += e.KeyChar;
+				}
+			}
+		}
+		catch (Exception ex)
+		{
+			s = "Xu?t hi?n l?i trong quá trình x? ly VnKey !!!\r\n" + ex.Source + "\r\n" + ex.Message + "\r\n" + ex.StackTrace + "\r\n" + ex.TargetSite.ToString() + "\r\n" + theoDoi1 + "\r\n" + theoDoi2;
+			File.WriteAllText(appDatapath + "\\VnKey\\\\Error.txt", s);
+			Process.Start(appDatapath + "\\VnKey\\Error.txt");
+			Application.Exit();
+		}
+	}
+
+	private void MyKeyDown(object sender, KeyEventArgs e)
+	{
+		string text = e.KeyData.ToString();
+		if (text.Contains("ControlKey") && !controlV)
+		{
+			control = true;
+		}
+		else if (text.Contains("LShiftKey"))
+		{
+			shiftL = true;
+		}
+		else if (text.Contains("RShiftKey"))
+		{
+			shiftR = true;
+		}
+		else if (text.Contains("Menu"))
+		{
+			alt = true;
+		}
+		else
+		{
+			another = true;
+		}
+		switch (text)
+		{
+		default:
+			if (!(text == "Right"))
+			{
+				if (text.Contains("NumPad"))
+				{
+					controlV = true;
+				}
+				break;
+			}
+			goto case "Home";
+		case "Home":
+		case "End":
+		case "Delete":
+		case "PageUp":
+		case "Next":
+		case "Up":
+		case "Down":
+		case "Left":
+			s1 = (s2 = (cache = (gotat = "")));
+			break;
+		}
+		if (control && !shiftL && !shiftR && !alt)
+		{
+			s1 = (s2 = (cache = (gotat = "")));
+		}
+	}
+
+	private void MyKeyUp(object sender, KeyEventArgs e)
+	{
+		Inbox();
+		if (control && alt && !shiftL && !shiftR)
+		{
+			if (e.KeyCode == Keys.F1)
+			{
+				cbbSetting.SelectedIndex = 0;
+				s1 = appDatapath + "\\VnKey\\VnKey1.xml";
+				notifyIcon1.BalloonTipText = ((!File.Exists(s1)) ? "Chua luu Setting1" : "Chuy?n ch? d? Setting1");
+				notifyIcon1.ShowBalloonTip(1);
+			}
+			else if (e.KeyCode == Keys.F2)
+			{
+				cbbSetting.SelectedIndex = 1;
+				s1 = appDatapath + "\\VnKey\\VnKey2.xml";
+				notifyIcon1.BalloonTipText = ((!File.Exists(s1)) ? "Chua luu Setting2" : "Chuy?n ch? d? Setting2");
+				notifyIcon1.ShowBalloonTip(1);
+			}
+			else if (e.KeyCode == Keys.F3)
+			{
+				cbbSetting.SelectedIndex = 2;
+				s1 = appDatapath + "\\VnKey\\VnKey3.xml";
+				notifyIcon1.BalloonTipText = ((!File.Exists(s1)) ? "Chua luu Setting3" : "Chuy?n ch? d? Setting3");
+				notifyIcon1.ShowBalloonTip(1);
+			}
+			else if (e.KeyCode == Keys.F4)
+			{
+				cbbSetting.SelectedIndex = 3;
+				s1 = appDatapath + "\\VnKey\\VnKey4.xml";
+				notifyIcon1.BalloonTipText = ((!File.Exists(s1)) ? "Chua luu Setting4" : "Chuy?n ch? d? Setting4");
+				notifyIcon1.ShowBalloonTip(1);
+			}
+			else if (e.KeyCode == Keys.F5)
+			{
+				cbbSetting.SelectedIndex = 4;
+				s1 = appDatapath + "\\VnKey\\VnKey5.xml";
+				notifyIcon1.BalloonTipText = ((!File.Exists(s1)) ? "Chua luu Setting5" : "Chuy?n ch? d? Setting5");
+				notifyIcon1.ShowBalloonTip(1);
+			}
+			try
+			{
+				XmlDocument xmlDocument = new XmlDocument();
+				xmlDocument.Load(s1);
+				if (xmlDocument.DocumentElement["bat"].InnerText == "0")
+				{
+					viet = false;
+					notifyIcon1.Icon = Resources.icon32E;
+				}
+				else
+				{
+					viet = true;
+					notifyIcon1.Icon = Resources.icon32V;
+				}
+				CbbKieuGo.SelectedIndex = int.Parse(xmlDocument.DocumentElement["kieuGo"].InnerText);
+				CbbBangma.SelectedIndex = int.Parse(xmlDocument.DocumentElement["bangMa"].InnerText);
+				chbBoDauKieuMoi.Checked = xmlDocument.DocumentElement["boDauKieuMoi"].InnerText != "0";
+				chbBatHoiThoaiKhiKhoiDong.Checked = xmlDocument.DocumentElement["batHoiThoaiKhiKhoiDong"].InnerText != "0";
+				if (xmlDocument.DocumentElement["kiemTraChinhTa"].InnerText == "0")
+				{
+					cbbKTChinhTa.SelectedIndex = 0;
+				}
+				else if (xmlDocument.DocumentElement["kiemTraChinhTa"].InnerText == "1")
+				{
+					cbbKTChinhTa.SelectedIndex = 1;
+				}
+				else
+				{
+					cbbKTChinhTa.SelectedIndex = 2;
+				}
+				chbChoPhepGoTat.Checked = !(xmlDocument.DocumentElement["choPhepGoTat"].InnerText == "0");
+				chbGoTatKhiTatTiengViet.Checked = xmlDocument.DocumentElement["goTatKhiTatTiengViet"].InnerText != "0";
+				chbKhongCanCach.Checked = xmlDocument.DocumentElement["khongCanCach"].InnerText != "0";
+				chbSuDungSendInput.Checked = xmlDocument.DocumentElement["sendInput"].InnerText != "0";
+				chbBoDauTrongAutoComplete.Checked = xmlDocument.DocumentElement["boDauTrongAutocomplete"].InnerText != "0";
+				chbBatTheoDoi.Checked = xmlDocument.DocumentElement["tatTheoDoi"].InnerText != "0";
+				if (xmlDocument.DocumentElement["phimChuyen"].InnerText != "0")
+				{
+					rdbAltZ.Checked = true;
+				}
+				else
+				{
+					rdbCtrlShift.Checked = true;
+				}
+				if (xmlDocument.DocumentElement["phimChuyen"].InnerText != "0")
+				{
+					rdbAltZ.Checked = true;
+					if (int.TryParse(xmlDocument.DocumentElement["phimChuyen"].InnerText, out var result) && result > 0 && result <= cbbPhimTat.Items.Count)
+					{
+						cbbPhimTat.SelectedIndex = result - 1;
+					}
+				}
+				else
+				{
+					rdbCtrlShift.Checked = true;
+				}
+				LuuFile("VnKey");
+			}
+			catch
+			{
+				chbKhoiDongCungWin.Checked = true;
+			}
+			s = (s1 = (s2 = (cache = (gotat = ""))));
+		}
+		if (rdbAltZ.Checked && cbbPhimTat.SelectedIndex != -1 && e.KeyCode == (Keys)cbbPhimTat.Items[cbbPhimTat.SelectedIndex].ToString()[0] && !control && !shiftL && !shiftR && alt)
+		{
+			if (viet)
+			{
+				notifyIcon1.Icon = Resources.icon32E;
+				s1 = (s2 = (cache = ""));
+			}
+			else
+			{
+				notifyIcon1.Icon = Resources.icon32V;
+			}
+			viet = !viet;
+		}
+		if (e.KeyData.ToString().Contains("ControlKey"))
+		{
+			control = false;
+			if ((shiftL || shiftR) && !another)
+			{
+				CtrlShift = true;
+			}
+		}
+		else if (e.KeyData.ToString().Contains("LShiftKey"))
+		{
+			shiftL = false;
+			if (control && !another)
+			{
+				CtrlShift = true;
+			}
+		}
+		else if (e.KeyData.ToString().Contains("RShiftKey"))
+		{
+			shiftR = false;
+			if (control && !another)
+			{
+				CtrlShift = true;
+			}
+		}
+		else if (e.KeyData.ToString().Contains("Menu"))
+		{
+			alt = false;
+		}
+		if (rdbCtrlShift.Checked && (e.KeyData.ToString().Contains("ControlKey") || e.KeyData.ToString().Contains("ShiftKey")) && !control && !shiftL && !shiftR && CtrlShift && !alt && !another)
+		{
+			if (viet)
+			{
+				notifyIcon1.Icon = Resources.icon32E;
+				s1 = (s2 = (cache = ""));
+			}
+			else
+			{
+				notifyIcon1.Icon = Resources.icon32V;
+			}
+			viet = !viet;
+			control = (shiftL = (shiftR = (alt = (another = (CtrlShift = false)))));
+		}
+		if (!control && !shiftL && !shiftR)
+		{
+			another = false;
+		}
+	}
+
+	private void MouseMoved(object sender, EventArgs e)
+	{
+		if (Control.MouseButtons != MouseButtons.None)
+		{
+			s1 = (s2 = (cache = (gotat = "")));
+			ngatTamThoi = -1;
+			Inbox();
+		}
+	}
+
+	private void XuatTiengViet(string s, string s1, bool autocomplete)
+	{
+		if (!(s != s1))
+		{
+			return;
+		}
+		xuat = 0;
+		i = 0;
+		while (i < s.Length && i < s1.Length && s[i] == s1[i])
+		{
+			xuat++;
+			i++;
+		}
+		if (s.Length == s1.Length - 1 && gotat != null && gotat.Length > 0)
+		{
+			gotat = gotat.Remove(gotat.Length - 1);
+		}
+		if (s1 == " ")
+		{
+			s1 = string.Empty;
+		}
+		int num = Math.Max(0, s1.Length - xuat);
+		if (!chbSuDungSendInput.Checked)
+		{
+			if (autocomplete && chbBoDauTrongAutoComplete.Checked)
+			{
+				controlV = true;
+				for (i = 0; i < num; i++)
+				{
+					controlV = true;
+					keybd_event(8, 0, 0u, UIntPtr.Zero);
+					keybd_event(8, 0, 2u, UIntPtr.Zero);
+					Thread.Sleep(10);
+				}
+			}
+			else
+			{
+				for (i = 0; i < num; i++)
+				{
+					controlV = true;
+					keybd_event(8, 0, 0u, UIntPtr.Zero);
+					keybd_event(8, 0, 2u, UIntPtr.Zero);
+					Thread.Sleep(10);
+				}
+			}
+			if (xuat != s.Length)
+			{
+				gotat = string.Empty;
+				SetClipboardAPI(s.Substring(xuat, s.Length - xuat));
+				Thread.Sleep(30);
+				if (shiftR)
+				{
+					keybd_event(16, 0, 0u, UIntPtr.Zero);
+					keybd_event(45, 0, 1u, UIntPtr.Zero);
+					keybd_event(45, 0, 2u, UIntPtr.Zero);
+					keybd_event(16, 0, 2u, UIntPtr.Zero);
+				}
+				else if (shiftL)
+				{
+					controlV = true;
+					keybd_event(160, 0, 2u, UIntPtr.Zero);
+					keybd_event(17, 0, 0u, UIntPtr.Zero);
+					keybd_event(86, 0, 0u, UIntPtr.Zero);
+					keybd_event(86, 0, 2u, UIntPtr.Zero);
+					keybd_event(17, 0, 2u, UIntPtr.Zero);
+					keybd_event(160, 0, 0u, UIntPtr.Zero);
+				}
+				else
+				{
+					controlV = true;
+					keybd_event(17, 0, 0u, UIntPtr.Zero);
+					keybd_event(86, 0, 0u, UIntPtr.Zero);
+					keybd_event(86, 0, 2u, UIntPtr.Zero);
+					keybd_event(17, 0, 2u, UIntPtr.Zero);
+				}
+				Thread.Sleep(30);
+				controlV = false;
+			}
+			return;
+		}
+		if (autocomplete && chbBoDauTrongAutoComplete.Checked)
+		{
+			for (i = 0; i < s1.Length - xuat; i++)
+			{
+				controlV = true;
+				sendAnsi(Keys.Back);
+				Thread.Sleep(8);
+			}
+		}
+		else
+		{
+			for (i = 0; i < num; i++)
+			{
+				controlV = true;
+				sendAnsi(Keys.Back);
+				Thread.Sleep(8);
+			}
+		}
+		if (xuat != s.Length)
+		{
+			gotat = string.Empty;
+			sendUnicode(s.Substring(xuat));
+			Thread.Sleep(20);
+		}
+	}
+
+	private void chbBoDauKieuMoi_CheckedChanged(object sender, EventArgs e)
+	{
+		a.boDauKieuMoi = chbBoDauKieuMoi.Checked;
+		tsmBoDauKieuMoi.Checked = chbBoDauKieuMoi.Checked;
+	}
+
+	private void frmVnKey_Shown(object sender, EventArgs e)
+	{
+		notifyIcon1.Visible = true;
+		if (!chbBatHoiThoaiKhiKhoiDong.Checked)
+		{
+			Hide();
+		}
+		chbKhoiDongCungWin.Checked = rkApp.GetValue("VnKey") != null;
+	}
+
+	private void chbKhoiDongCungWin_CheckedChanged(object sender, EventArgs e)
+	{
+		if (chbKhoiDongCungWin.Checked)
+		{
+			rkApp.SetValue("VnKey", Application.ExecutablePath.ToString());
+		}
+		else
+		{
+			rkApp.DeleteValue("VnKey", throwOnMissingValue: false);
+		}
+		tsmKhoiDongCungWin.Checked = chbKhoiDongCungWin.Checked;
+	}
+
+	private void bttClose_Click(object sender, EventArgs e)
+	{
+		LuuFile("VnKey");
+		if (luuGoTat)
+		{
+			StreamWriter streamWriter = new StreamWriter(appDatapath + "\\VnKey\\GoTat.dat");
+			for (i = 0; i < grdGotat.Rows.Count; i++)
+			{
+				streamWriter.WriteLine(grdGotat[0, i].Value.ToString() + "\t" + grdGotat[1, i].Value.ToString());
+			}
+			streamWriter.Flush();
+			streamWriter.Close();
+		}
+		Hide();
+	}
+
+	private void label1_MouseDown(object sender, MouseEventArgs e)
+	{
+		if (e.Button == MouseButtons.Left)
+		{
+			dragging = true;
+			pointClicked = new Point(e.X, e.Y);
+		}
+		else
+		{
+			dragging = false;
+		}
+	}
+
+	private void label1_MouseUp(object sender, MouseEventArgs e)
+	{
+		dragging = false;
+	}
+
+	private void label1_MouseMove(object sender, MouseEventArgs e)
+	{
+		if (dragging)
+		{
+			Point location = PointToScreen(new Point(e.X, e.Y));
+			location.Offset(-pointClicked.X, -pointClicked.Y);
+			base.Location = location;
+		}
+	}
+
+	private void notifyIcon1_MouseClick(object sender, MouseEventArgs e)
+	{
+		if (e.Button == MouseButtons.Left)
+		{
+			if (viet)
+			{
+				notifyIcon1.Icon = Resources.icon32E;
+				s1 = (s2 = (cache = ""));
+			}
+			else
+			{
+				notifyIcon1.Icon = Resources.icon32V;
+			}
+			viet = !viet;
+		}
+		LuuFile("VnKey");
+		keybd_event(16, 0, 2u, UIntPtr.Zero);
+		keybd_event(17, 0, 2u, UIntPtr.Zero);
+	}
+
+	private void notifyIcon1_MouseDoubleClick(object sender, MouseEventArgs e)
+	{
+		if (e.Button == MouseButtons.Left)
+		{
+			Show();
+			if (viet)
+			{
+				notifyIcon1.Icon = Resources.icon32E;
+				s1 = (s2 = (cache = ""));
+			}
+			else
+			{
+				notifyIcon1.Icon = Resources.icon32V;
+			}
+			viet = !viet;
+		}
+	}
+
+	private void tsmThoat_Click(object sender, EventArgs e)
+	{
+		LuuFile("VnKey");
+		Application.Exit();
+	}
+
+	private void btnKiemTraCapNhat_Click(object sender, EventArgs e)
+	{
+		frmDangky frmDangky2 = new frmDangky(isExit: false);
+		frmDangky2.TopMost = true;
+		frmDangky2.BringToFront();
+		frmDangky2.ShowDialog();
+	}
+
+	private void CbbBangma_SelectedIndexChanged(object sender, EventArgs e)
+	{
+		if (CbbBangma.SelectedIndex == -1)
+		{
+			CbbBangma.SelectedIndex = 0;
+		}
+		a.bangMa = ((CbbBangma.SelectedIndex != 0) ? File.ReadAllLines(duongDan[CbbBangma.SelectedIndex - 1]) : unicodeDungSan);
+		tscBangMa.SelectedIndex = CbbBangma.SelectedIndex;
+	}
+
+	private void CbbKieuGo_SelectedIndexChanged(object sender, EventArgs e)
+	{
+		if (CbbKieuGo.SelectedIndex == -1)
+		{
+			CbbKieuGo.SelectedIndex = 0;
+		}
+		if (CbbKieuGo.SelectedIndex == 0)
+		{
+			a.kieuGo = vni;
+		}
+		else if (CbbKieuGo.SelectedIndex == 1)
+		{
+			a.kieuGo = telex;
+		}
+		else if (CbbKieuGo.SelectedIndex == 2)
+		{
+			a.kieuGo = telexMoRong;
+		}
+		else if (CbbKieuGo.SelectedIndex == 3)
+		{
+			a.kieuGo = VIQR;
+		}
+		a.idKieugo = CbbKieuGo.SelectedIndex;
+		tscKieuGo.SelectedIndex = CbbKieuGo.SelectedIndex;
+	}
+
+	private void tsmdotNetKey_Click(object sender, EventArgs e)
+	{
+		Show();
+	}
+
+	private void tsmHuongDan_Click(object sender, EventArgs e)
+	{
+		if (File.Exists(Application.StartupPath + "\\HuongDan\\HuongDan.htm"))
+		{
+			Hide();
+			Process.Start(Application.StartupPath + "\\HuongDan\\HuongDan.htm");
+		}
+		else
+		{
+			int num = (int)MessageBox.Show("Không tìm th?y file hu?ng d?n", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Hand);
+		}
+	}
+
+	private void Inbox()
+	{
+		if (!textBox2.Focused && chbBatTheoDoi.Checked)
+		{
+			theoDoi2 = "Gotat :\"" + gotat + "\"\r\ns1=\"" + s1 + "\"\r\ns2=\"" + s2 + "\"\r\ncache=\"" + cache + "\"\r\ns=\"" + s + "\"\r\nAm d?u:\"" + a.chu.amDau + "\"\r\nD:" + a.chu.D9 + "\r\nNguyên âm:\"" + a.chu.nguyenAm + "\"\r\nAm cu?i:\"" + a.chu.amCuoi + "\"\r\nD?u :\"" + a.chu.dau.ToString() + "\"\r\nMóc :\"" + a.chu.moc + "\"\r\nV? trí d?u :\"" + a.chu.vitriDau + "\"\r\nTrùng d?u:" + a.chu.trungdau;
+			if (tabControl1.SelectedIndex == 4 && base.Visible)
+			{
+				textBox2.Text = theoDoi2;
+			}
+		}
+	}
+
+	private void tsmBoDauKieuMoi_Click(object sender, EventArgs e)
+	{
+		chbBoDauKieuMoi.Checked = !chbBoDauKieuMoi.Checked;
+	}
+
+	private void tsmKhoiDongCungWin_Click(object sender, EventArgs e)
+	{
+		chbKhoiDongCungWin.Checked = !chbKhoiDongCungWin.Checked;
+	}
+
+	private void tscBangMa_SelectedIndexChanged(object sender, EventArgs e)
+	{
+		if (tscBangMa.SelectedIndex != CbbBangma.SelectedIndex)
+		{
+			CbbBangma.SelectedIndex = tscBangMa.SelectedIndex;
+		}
+	}
+
+	private void tscKieuGo_SelectedIndexChanged(object sender, EventArgs e)
+	{
+		if (tscKieuGo.SelectedIndex != CbbKieuGo.SelectedIndex)
+		{
+			CbbKieuGo.SelectedIndex = tscKieuGo.SelectedIndex;
+		}
+	}
+
+	private void dataGridView1_CellClick(object sender, DataGridViewCellEventArgs e)
+	{
+		txtThayThe.Text = grdGotat[0, e.RowIndex].Value.ToString();
+		txtBang.Text = grdGotat[1, e.RowIndex].Value.ToString();
+	}
+
+	private void btnThem_Click(object sender, EventArgs e)
+	{
+		txtThayThe.Text = txtThayThe.Text.ToLower();
+		if (txtBang.Text == "" || txtThayThe.Text == "")
+		{
+			int num = (int)MessageBox.Show("B?n ph?i di?n d?y d? 2 c?a s? nh?p d?nh nghia go t?t", "Thông báo");
+			return;
+		}
+		for (i = 0; i < grdGotat.Rows.Count; i++)
+		{
+			if (grdGotat[0, i].Value.ToString() == txtThayThe.Text)
+			{
+				int num2 = (int)MessageBox.Show("D?nh nghia này xung d?t v?i d?nh nghia :" + grdGotat[0, i].Value.ToString(), "Thông báo");
+				return;
+			}
+		}
+		grdGotat.Rows.Add(txtThayThe.Text.ToLower(), txtBang.Text);
+		grdGotat.Sort(grdGotat.Columns[0], ListSortDirection.Ascending);
+		luuGoTat = true;
+	}
+
+	private void btnXoa_Click(object sender, EventArgs e)
+	{
+		if (grdGotat.SelectedCells.Count == 1)
+		{
+			grdGotat.Rows.RemoveAt(grdGotat.SelectedCells[0].RowIndex);
+		}
+		luuGoTat = true;
+	}
+
+	private void btnSua_Click(object sender, EventArgs e)
+	{
+		txtThayThe.Text = txtThayThe.Text.ToLower();
+		if (txtBang.Text == "" || txtThayThe.Text == "")
+		{
+			int num = (int)MessageBox.Show("B?n ph?i di?n d?y d? 2 c?a s? nh?p d?nh nghia go t?t", "Thông báo");
+			return;
+		}
+		for (i = 0; i < txtThayThe.Text.Length; i++)
+		{
+			if (txtThayThe.Text[i] <= ' ' || txtThayThe.Text[i] >= '\u007f')
+			{
+				int num2 = (int)MessageBox.Show("Ph?n d?nh nghia go t?t không dúng", "Thông báo");
+				return;
+			}
+		}
+		if (grdGotat.SelectedCells.Count != 1)
+		{
+			int num3 = (int)MessageBox.Show("b?n chua ch?n 1 hàng", "Thông báo");
+			return;
+		}
+		for (i = 0; i < grdGotat.Rows.Count; i++)
+		{
+			if (grdGotat.SelectedCells[0].RowIndex != i && grdGotat[0, i].Value.ToString() == txtThayThe.Text)
+			{
+				int num4 = (int)MessageBox.Show("D?nh nghia này xung d?t v?i d?nh nghia :" + grdGotat[0, i].Value.ToString(), "Thông báo");
+				return;
+			}
+		}
+		grdGotat[0, grdGotat.SelectedCells[0].RowIndex].Value = txtThayThe.Text;
+		grdGotat[1, grdGotat.SelectedCells[0].RowIndex].Value = txtBang.Text;
+		luuGoTat = true;
+	}
+
+	private void tsmBangGoTat_Click(object sender, EventArgs e)
+	{
+		Show();
+		tabControl1.SelectedIndex = 2;
+	}
+
+	private void tsmTuyChonGoTat_Click(object sender, EventArgs e)
+	{
+		Show();
+		tabControl1.SelectedIndex = 1;
+	}
+
+	private bool goTat(char c)
+	{
+		if (!chbChoPhepGoTat.Checked || controlV || (!viet && !chbGoTatKhiTatTiengViet.Checked))
+		{
+			return false;
+		}
+		if (c > ' ' && c < '\u007f')
+		{
+			if (gotat == null)
+			{
+				return false;
+			}
+			gotat += c;
+			if (chbKhongCanCach.Checked && s1 == s2)
+			{
+				s = gotat.ToLower();
+				for (int i = 0; i < grdGotat.Rows.Count; i++)
+				{
+					if (grdGotat[0, i].Value.ToString() == gotat.ToLower())
+					{
+						if (gotat == gotat.ToLower())
+						{
+							XuatTiengViet(chuyenBangMa(grdGotat[1, i].Value.ToString()), gotat.Remove(gotat.Length - 1), autocomplete: true);
+						}
+						else if (gotat == gotat.ToUpper())
+						{
+							XuatTiengViet(chuyenBangMa(grdGotat[1, i].Value.ToString().ToUpper()), gotat.Remove(gotat.Length - 1), autocomplete: true);
+						}
+						else
+						{
+							XuatTiengViet(chuyenBangMa(grdGotat[1, i].Value.ToString().ToLower()), gotat.Remove(gotat.Length - 1), autocomplete: true);
+						}
+						s1 = (s2 = (cache = (gotat = "")));
+						return true;
+					}
+				}
+			}
+		}
+		else
+		{
+			if (c == '\b')
+			{
+				return false;
+			}
+			if (!chbKhongCanCach.Checked && s1 == s2 && gotat != null)
+			{
+				for (int j = 0; j < grdGotat.Rows.Count; j++)
+				{
+					if (grdGotat[0, j].Value.ToString() == gotat.ToLower())
+					{
+						if (gotat == gotat.ToLower())
+						{
+							XuatTiengViet(chuyenBangMa(grdGotat[1, j].Value.ToString()), gotat, autocomplete: true);
+						}
+						else if (gotat == gotat.ToUpper())
+						{
+							XuatTiengViet(chuyenBangMa(grdGotat[1, j].Value.ToString().ToUpper()), gotat, autocomplete: true);
+						}
+						else
+						{
+							XuatTiengViet(chuyenBangMa(grdGotat[1, j].Value.ToString().ToLower()), gotat, autocomplete: true);
+						}
+						s1 = (s2 = (cache = ""));
+						break;
+					}
+				}
+				gotat = "";
+			}
+			else
+			{
+				gotat = s1;
+				for (int k = 0; k < grdGotat.Rows.Count; k++)
+				{
+					if (grdGotat[0, k].Value.ToString() == gotat.ToLower())
+					{
+						if (gotat == gotat.ToLower())
+						{
+							XuatTiengViet(chuyenBangMa(grdGotat[1, k].Value.ToString()), gotat, autocomplete: true);
+						}
+						else if (gotat == gotat.ToUpper())
+						{
+							XuatTiengViet(chuyenBangMa(grdGotat[1, k].Value.ToString().ToUpper()), gotat, autocomplete: true);
+						}
+						else
+						{
+							XuatTiengViet(chuyenBangMa(grdGotat[1, k].Value.ToString().ToLower()), gotat, autocomplete: true);
+						}
+						s1 = (s2 = (cache = ""));
+						break;
+					}
+				}
+				gotat = "";
+			}
+		}
+		return false;
+	}
+
+	private string chuyenBangMa(string tam)
+	{
+		string text = "";
+		if (CbbBangma.SelectedIndex == 0)
+		{
+			return tam;
+		}
+		for (int i = 0; i < tam.Length; i++)
+		{
+			int j;
+			for (j = 0; j < unicodeDungSan.Length; j++)
+			{
+				if (unicodeDungSan[j][0] == tam[i])
+				{
+					text += a.bangMa[j];
+					break;
+				}
+			}
+			if (j >= unicodeDungSan.Length)
+			{
+				text += tam[i];
+			}
+		}
+		return text;
+	}
+
+	private void tsmDungSendInput_Click(object sender, EventArgs e)
+	{
+		chbSuDungSendInput.Checked = !chbSuDungSendInput.Checked;
+	}
+
+	private void chbSuDungSendInput_CheckedChanged(object sender, EventArgs e)
+	{
+		tsmSuDungSendInput.Checked = !tsmSuDungSendInput.Checked;
+	}
+
+	private void tsmTuyChonKhac_Click(object sender, EventArgs e)
+	{
+		Show();
+		tabControl1.SelectedIndex = 1;
+	}
+
+	private void tsmboDauTrongAutocomplete_Click(object sender, EventArgs e)
+	{
+		chbBoDauTrongAutoComplete.Checked = !chbBoDauTrongAutoComplete.Checked;
+	}
+
+	private void chbBoDauTrongAutoComplete_CheckedChanged(object sender, EventArgs e)
+	{
+		tsmboDauTrongAutocomplete.Checked = !tsmboDauTrongAutocomplete.Checked;
+	}
+
+	private void btnThietLapSan1_Click(object sender, EventArgs e)
+	{
+		chbBoDauKieuMoi.Checked = false;
+		cbbKTChinhTa.SelectedIndex = 2;
+		chbSuDungSendInput.Checked = false;
+		chbBoDauTrongAutoComplete.Checked = false;
+		chbBatHoiThoaiKhiKhoiDong.Checked = false;
+		chbKhoiDongCungWin.Checked = true;
+		chbChoPhepGoTat.Checked = true;
+		chbGoTatKhiTatTiengViet.Checked = false;
+		chbKhongCanCach.Checked = false;
+	}
+
+	private bool KiemTraUWO(char c, string s)
+	{
+		s = s.ToLower();
+		int num = s.IndexOf(c);
+		return s.IndexOf('u') < num && s.IndexOf('o') > num && s.LastIndexOf(c) == num;
+	}
+
+	private void btnThuMucThietLap_Click(object sender, EventArgs e)
+	{
+		Process.Start(appDatapath + "\\VnKey");
+	}
+
+	private void btnChuyenMa_Click(object sender, EventArgs e)
+	{
+		if (File.Exists(Application.StartupPath + "\\Convert\\Unikey toolkit.exe"))
+		{
+			Hide();
+			Process.Start(Application.StartupPath + "\\Convert\\Unikey toolkit.exe");
+		}
+		else
+		{
+			int num = (int)MessageBox.Show("Không tìm th?y file Unikey toolkit.exe", "Thông báo");
+		}
+	}
+
+	private void tmsChuyenMa_Click(object sender, EventArgs e)
+	{
+		Hide();
+		if (File.Exists(Application.StartupPath + "\\Convert\\Unikey toolkit.exe"))
+		{
+			Process.Start(Application.StartupPath + "\\Convert\\Unikey toolkit.exe");
+		}
+		else
+		{
+			int num = (int)MessageBox.Show("Không tìm th?y file Unikey toolkit.exe", "Thông báo");
+		}
+	}
+
+	private void btnHuongDan_Click(object sender, EventArgs e)
+	{
+		if (File.Exists(Application.StartupPath + "\\Help\\Huongdan.pdf"))
+		{
+			Hide();
+			Process.Start(Application.StartupPath + "\\Help\\Huongdan.pdf");
+		}
+		else
+		{
+			MessageBox.Show("Không tìm th?y file hu?ng d?n", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Hand);
+		}
+	}
+
+	private void tabControl1_SelectedIndexChanged(object sender, EventArgs e)
+	{
+		if (tabControl1.SelectedIndex == 3 && chbBatTheoDoi.Checked)
+		{
+			txtTheodoi1.Text = theoDoi1;
+			textBox2.Text = theoDoi2;
+		}
+	}
+
+	private void chbBatTheoDoi_CheckedChanged(object sender, EventArgs e)
+	{
+		theoDoi2 = (theoDoi1 = string.Empty);
+	}
+
+	private void cbbSetting_SelectedIndexChanged(object sender, EventArgs e)
+	{
+		s1 = ((cbbSetting.SelectedIndex == 1) ? (appDatapath + "\\VnKey\\VnKey2.xml") : ((cbbSetting.SelectedIndex == 2) ? (appDatapath + "\\VnKey\\VnKey3.xml") : ((cbbSetting.SelectedIndex == 3) ? (appDatapath + "\\VnKey\\VnKey4.xml") : ((cbbSetting.SelectedIndex != 4) ? (appDatapath + "\\VnKey\\VnKey1.xml") : (appDatapath + "\\VnKey\\VnKey5.xml")))));
+		try
+		{
+			XmlDocument xmlDocument = new XmlDocument();
+			xmlDocument.Load(s1);
+			if (xmlDocument.DocumentElement["bat"].InnerText == "0")
+			{
+				viet = false;
+				notifyIcon1.Icon = Resources.icon32E;
+			}
+			CbbKieuGo.SelectedIndex = int.Parse(xmlDocument.DocumentElement["kieuGo"].InnerText);
+			CbbBangma.SelectedIndex = int.Parse(xmlDocument.DocumentElement["bangMa"].InnerText);
+			chbBoDauKieuMoi.Checked = xmlDocument.DocumentElement["boDauKieuMoi"].InnerText != "0";
+			chbBatHoiThoaiKhiKhoiDong.Checked = xmlDocument.DocumentElement["batHoiThoaiKhiKhoiDong"].InnerText != "0";
+			if (xmlDocument.DocumentElement["kiemTraChinhTa"].InnerText == "0")
+			{
+				cbbKTChinhTa.SelectedIndex = 0;
+			}
+			else if (xmlDocument.DocumentElement["kiemTraChinhTa"].InnerText == "1")
+			{
+				cbbKTChinhTa.SelectedIndex = 1;
+			}
+			else
+			{
+				cbbKTChinhTa.SelectedIndex = 2;
+			}
+			chbChoPhepGoTat.Checked = !(xmlDocument.DocumentElement["choPhepGoTat"].InnerText == "0");
+			chbGoTatKhiTatTiengViet.Checked = xmlDocument.DocumentElement["goTatKhiTatTiengViet"].InnerText != "0";
+			chbKhongCanCach.Checked = xmlDocument.DocumentElement["khongCanCach"].InnerText != "0";
+			chbSuDungSendInput.Checked = xmlDocument.DocumentElement["sendInput"].InnerText != "0";
+			chbBoDauTrongAutoComplete.Checked = xmlDocument.DocumentElement["boDauTrongAutocomplete"].InnerText != "0";
+			chbBatTheoDoi.Checked = xmlDocument.DocumentElement["tatTheoDoi"].InnerText != "0";
+			if (xmlDocument.DocumentElement["phimChuyen"].InnerText != "0")
+			{
+				rdbAltZ.Checked = true;
+			}
+			else
+			{
+				rdbCtrlShift.Checked = true;
+			}
+		}
+		catch
+		{
+			chbKhoiDongCungWin.Checked = true;
+		}
+		s = (s1 = (s2 = (cache = (gotat = ""))));
+	}
+
+	private void btnLuu_Click(object sender, EventArgs e)
+	{
+		LuuFile("VnKey" + (cbbSetting.SelectedIndex + 1));
+	}
+
+	private void LuuFile(string tam)
+	{
+		try
+		{
+			s1 = appDatapath + "\\VnKey\\" + tam + ".xml";
+			if (!File.Exists(s1))
+			{
+				File.WriteAllText(s1, "<?xml version=\"1.0\" encoding=\"utf-8\"?><config>\r\n  <bat>1</bat>\r\n  <kieuGo>0</kieuGo>\r\n  <bangMa>0</bangMa>\r\n  <boDauKieuMoi>0</boDauKieuMoi>\r\n  <batHoiThoaiKhiKhoiDong>0</batHoiThoaiKhiKhoiDong>\r\n  <kiemTraChinhTa>1</kiemTraChinhTa>\r\n  <choPhepGoTat>0</choPhepGoTat>\r\n  <goTatKhiTatTiengViet>0</goTatKhiTatTiengViet>\r\n  <khongCanCach>0</khongCanCach>\r\n  <sendInput>0</sendInput>\r\n  <boDauTrongAutocomplete>0</boDauTrongAutocomplete>\r\n  <tatTheoDoi>0</tatTheoDoi>\r\n  <phimChuyen>0</phimChuyen>\r\n <KhoiDongCungWin>0</KhoiDongCungWin></config>");
+			}
+			XmlDocument xmlDocument = new XmlDocument();
+			xmlDocument.Load(s1);
+			if (!viet)
+			{
+				xmlDocument.DocumentElement["bat"].InnerText = "0";
+			}
+			else
+			{
+				xmlDocument.DocumentElement["bat"].InnerText = "1";
+			}
+			xmlDocument.DocumentElement["kieuGo"].InnerText = CbbKieuGo.SelectedIndex.ToString();
+			xmlDocument.DocumentElement["bangMa"].InnerText = CbbBangma.SelectedIndex.ToString();
+			if (chbBoDauKieuMoi.Checked)
+			{
+				xmlDocument.DocumentElement["boDauKieuMoi"].InnerText = "1";
+			}
+			else
+			{
+				xmlDocument.DocumentElement["boDauKieuMoi"].InnerText = "0";
+			}
+			if (chbBatHoiThoaiKhiKhoiDong.Checked)
+			{
+				xmlDocument.DocumentElement["batHoiThoaiKhiKhoiDong"].InnerText = "1";
+			}
+			else
+			{
+				xmlDocument.DocumentElement["batHoiThoaiKhiKhoiDong"].InnerText = "0";
+			}
+			xmlDocument.DocumentElement["kiemTraChinhTa"].InnerText = cbbKTChinhTa.SelectedIndex.ToString();
+			if (chbChoPhepGoTat.Checked)
+			{
+				xmlDocument.DocumentElement["choPhepGoTat"].InnerText = "1";
+			}
+			else
+			{
+				xmlDocument.DocumentElement["choPhepGoTat"].InnerText = "0";
+			}
+			if (chbGoTatKhiTatTiengViet.Checked)
+			{
+				xmlDocument.DocumentElement["goTatKhiTatTiengViet"].InnerText = "1";
+			}
+			else
+			{
+				xmlDocument.DocumentElement["goTatKhiTatTiengViet"].InnerText = "0";
+			}
+			if (chbKhongCanCach.Checked)
+			{
+				xmlDocument.DocumentElement["khongCanCach"].InnerText = "1";
+			}
+			else
+			{
+				xmlDocument.DocumentElement["khongCanCach"].InnerText = "0";
+			}
+			if (chbSuDungSendInput.Checked)
+			{
+				xmlDocument.DocumentElement["sendInput"].InnerText = "1";
+			}
+			else
+			{
+				xmlDocument.DocumentElement["sendInput"].InnerText = "0";
+			}
+			if (chbBoDauTrongAutoComplete.Checked)
+			{
+				xmlDocument.DocumentElement["boDauTrongAutocomplete"].InnerText = "1";
+			}
+			else
+			{
+				xmlDocument.DocumentElement["boDauTrongAutocomplete"].InnerText = "0";
+			}
+			if (chbBatTheoDoi.Checked)
+			{
+				xmlDocument.DocumentElement["tatTheoDoi"].InnerText = "1";
+			}
+			else
+			{
+				xmlDocument.DocumentElement["tatTheoDoi"].InnerText = "0";
+			}
+			if (rdbAltZ.Checked)
+			{
+				xmlDocument.DocumentElement["phimChuyen"].InnerText = (cbbPhimTat.SelectedIndex + 1).ToString();
+			}
+			else
+			{
+				xmlDocument.DocumentElement["phimChuyen"].InnerText = "0";
+			}
+			if (chbKhoiDongCungWin.Checked)
+			{
+				xmlDocument.DocumentElement["KhoiDongCungWin"].InnerText = "1";
+			}
+			else
+			{
+				xmlDocument.DocumentElement["KhoiDongCungWin"].InnerText = "0";
+			}
+			xmlDocument.Save(s1);
+		}
+		catch
+		{
+			File.WriteAllText(s1, "<?xml version=\"1.0\" encoding=\"utf-8\"?><config>\r\n  <bat>1</bat>\r\n  <kieuGo>0</kieuGo>\r\n  <bangMa>0</bangMa>\r\n  <boDauKieuMoi>0</boDauKieuMoi>\r\n  <batHoiThoaiKhiKhoiDong>0</batHoiThoaiKhiKhoiDong>\r\n  <kiemTraChinhTa>1</kiemTraChinhTa>\r\n  <choPhepGoTat>0</choPhepGoTat>\r\n  <goTatKhiTatTiengViet>0</goTatKhiTatTiengViet>\r\n  <khongCanCach>0</khongCanCach>\r\n  <sendInput>0</sendInput>\r\n  <boDauTrongAutocomplete>0</boDauTrongAutocomplete>\r\n  <tatTheoDoi>0</tatTheoDoi>\r\n  <phimChuyen>0</phimChuyen>\r\n <KhoiDongCungWin>0</KhoiDongCungWin></config>");
+			LuuFile(s1);
+		}
+		s = (s1 = (s2 = (cache = (gotat = ""))));
+	}
+
+	private void contextMenuStrip1_Closed(object sender, ToolStripDropDownClosedEventArgs e)
+	{
+		LuuFile("VnKey");
+	}
+
+	private void richTextBox1_LinkClicked(object sender, LinkClickedEventArgs e)
+	{
+		Process.Start(e.LinkText);
+	}
+
+	private void tscKTChinhTa_SelectedIndexChanged(object sender, EventArgs e)
+	{
+		cbbKTChinhTa.SelectedIndex = tscKTChinhTa.SelectedIndex;
+	}
+
+	private void cbbKTChinhTa_SelectedIndexChanged(object sender, EventArgs e)
+	{
+		tscKTChinhTa.SelectedIndex = cbbKTChinhTa.SelectedIndex;
+		a.ktChinhTa = cbbKTChinhTa.SelectedIndex;
+	}
+
+	private void tsDangky_Click(object sender, EventArgs e)
+	{
+		frmDangky frmDangky2 = new frmDangky(isExit: false);
+		frmDangky2.ShowDialog();
+	}
+
+	private void tsRestart_Click(object sender, EventArgs e)
+	{
+		Application.Restart();
+	}
+
+	protected override void Dispose(bool disposing)
+	{
+		if (disposing && components != null)
+		{
+			components.Dispose();
+		}
+		base.Dispose(disposing);
+	}
+
+	private void InitializeComponent()
+	{
+		this.components = new System.ComponentModel.Container();
+		System.Windows.Forms.DataGridViewCellStyle dataGridViewCellStyle = new System.Windows.Forms.DataGridViewCellStyle();
+		System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(VnKey.frmVnKey));
+		this.notifyIcon1 = new System.Windows.Forms.NotifyIcon(this.components);
+		this.contextMenuStrip1 = new System.Windows.Forms.ContextMenuStrip(this.components);
+		this.tsmHuongDan = new System.Windows.Forms.ToolStripMenuItem();
+		this.toolStripSeparator2 = new System.Windows.Forms.ToolStripSeparator();
+		this.tmsChuyenMa = new System.Windows.Forms.ToolStripMenuItem();
+		this.tsmBangGoTat = new System.Windows.Forms.ToolStripMenuItem();
+		this.toolStripSeparator3 = new System.Windows.Forms.ToolStripSeparator();
+		this.tscBangMa = new System.Windows.Forms.ToolStripComboBox();
+		this.tscKieuGo = new System.Windows.Forms.ToolStripComboBox();
+		this.toolStripSeparator4 = new System.Windows.Forms.ToolStripSeparator();
+		this.tsmTuyChonKhac = new System.Windows.Forms.ToolStripMenuItem();
+		this.tsmSuDungSendInput = new System.Windows.Forms.ToolStripMenuItem();
+		this.tsmBoDauKieuMoi = new System.Windows.Forms.ToolStripMenuItem();
+		this.tsmboDauTrongAutocomplete = new System.Windows.Forms.ToolStripMenuItem();
+		this.tscKTChinhTa = new System.Windows.Forms.ToolStripComboBox();
+		this.tsmKhoiDongCungWin = new System.Windows.Forms.ToolStripMenuItem();
+		this.toolStripSeparator1 = new System.Windows.Forms.ToolStripSeparator();
+		this.tsmdotNetKey = new System.Windows.Forms.ToolStripMenuItem();
+		this.tsDangky = new System.Windows.Forms.ToolStripMenuItem();
+		this.tsRestart = new System.Windows.Forms.ToolStripMenuItem();
+		this.tsmThoat = new System.Windows.Forms.ToolStripMenuItem();
+		this.chbBoDauKieuMoi = new System.Windows.Forms.CheckBox();
+		this.chbKhoiDongCungWin = new System.Windows.Forms.CheckBox();
+		this.thoátToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+		this.chbBatHoiThoaiKhiKhoiDong = new System.Windows.Forms.CheckBox();
+		this.tabControl1 = new System.Windows.Forms.TabControl();
+		this.tabPage1 = new System.Windows.Forms.TabPage();
+		this.CbbKieuGo = new System.Windows.Forms.ComboBox();
+		this.CbbBangma = new System.Windows.Forms.ComboBox();
+		this.groupBox4 = new System.Windows.Forms.GroupBox();
+		this.cbbPhimTat = new System.Windows.Forms.ComboBox();
+		this.rdbAltZ = new System.Windows.Forms.RadioButton();
+		this.rdbCtrlShift = new System.Windows.Forms.RadioButton();
+		this.btnChuyenMa = new System.Windows.Forms.Button();
+		this.label3 = new System.Windows.Forms.Label();
+		this.btnHuongDan = new System.Windows.Forms.Button();
+		this.bttClose = new System.Windows.Forms.Button();
+		this.label2 = new System.Windows.Forms.Label();
+		this.groupBox1 = new System.Windows.Forms.GroupBox();
+		this.label4 = new System.Windows.Forms.Label();
+		this.cbbKTChinhTa = new System.Windows.Forms.ComboBox();
+		this.chbBoDauTrongAutoComplete = new System.Windows.Forms.CheckBox();
+		this.chbSuDungSendInput = new System.Windows.Forms.CheckBox();
+		this.groupBox3 = new System.Windows.Forms.GroupBox();
+		this.chbChoPhepGoTat = new System.Windows.Forms.CheckBox();
+		this.chbGoTatKhiTatTiengViet = new System.Windows.Forms.CheckBox();
+		this.chbKhongCanCach = new System.Windows.Forms.CheckBox();
+		this.groupBox2 = new System.Windows.Forms.GroupBox();
+		this.chbBatTheoDoi = new System.Windows.Forms.CheckBox();
+		this.tabPage5 = new System.Windows.Forms.TabPage();
+		this.btnSua = new System.Windows.Forms.Button();
+		this.btnXoa = new System.Windows.Forms.Button();
+		this.btnThem = new System.Windows.Forms.Button();
+		this.txtBang = new System.Windows.Forms.TextBox();
+		this.txtThayThe = new System.Windows.Forms.TextBox();
+		this.grdGotat = new System.Windows.Forms.DataGridView();
+		this.Column1 = new System.Windows.Forms.DataGridViewTextBoxColumn();
+		this.Column2 = new System.Windows.Forms.DataGridViewTextBoxColumn();
+		this.tabPage3 = new System.Windows.Forms.TabPage();
+		this.richTextBox1 = new System.Windows.Forms.RichTextBox();
+		this.txtKiemTraCapNhat = new System.Windows.Forms.TextBox();
+		this.btnKiemTraCapNhat = new System.Windows.Forms.Button();
+		this.tabPage4 = new System.Windows.Forms.TabPage();
+		this.txtTheodoi1 = new System.Windows.Forms.TextBox();
+		this.textBox2 = new System.Windows.Forms.TextBox();
+		this.txtTheodoi2 = new System.Windows.Forms.TextBox();
+		this.btnLuu = new System.Windows.Forms.Button();
+		this.cbbSetting = new System.Windows.Forms.ComboBox();
+		this.btnThuMucThietLap = new System.Windows.Forms.Button();
+		this.btnThietLapSan1 = new System.Windows.Forms.Button();
+		this.timer1 = new System.Windows.Forms.Timer(this.components);
+		this.toolStripSeparator5 = new System.Windows.Forms.ToolStripSeparator();
+		this.contextMenuStrip1.SuspendLayout();
+		this.tabControl1.SuspendLayout();
+		this.tabPage1.SuspendLayout();
+		this.groupBox4.SuspendLayout();
+		this.groupBox1.SuspendLayout();
+		this.groupBox3.SuspendLayout();
+		this.groupBox2.SuspendLayout();
+		this.tabPage5.SuspendLayout();
+		((System.ComponentModel.ISupportInitialize)this.grdGotat).BeginInit();
+		this.tabPage3.SuspendLayout();
+		this.tabPage4.SuspendLayout();
+		base.SuspendLayout();
+		this.notifyIcon1.ContextMenuStrip = this.contextMenuStrip1;
+		this.notifyIcon1.Text = "DotNetKey";
+		this.notifyIcon1.MouseClick += new System.Windows.Forms.MouseEventHandler(notifyIcon1_MouseClick);
+		this.notifyIcon1.MouseDoubleClick += new System.Windows.Forms.MouseEventHandler(notifyIcon1_MouseDoubleClick);
+		this.contextMenuStrip1.Items.AddRange(new System.Windows.Forms.ToolStripItem[20]
+		{
+			this.tsmHuongDan, this.toolStripSeparator2, this.tmsChuyenMa, this.tsmBangGoTat, this.toolStripSeparator3, this.tscBangMa, this.tscKieuGo, this.toolStripSeparator4, this.tsmTuyChonKhac, this.tsmSuDungSendInput,
+			this.tsmBoDauKieuMoi, this.tsmboDauTrongAutocomplete, this.tscKTChinhTa, this.tsmKhoiDongCungWin, this.toolStripSeparator1, this.tsmdotNetKey, this.tsDangky, this.toolStripSeparator5, this.tsRestart, this.tsmThoat
+		});
+		this.contextMenuStrip1.Name = "contextMenuStrip1";
+		this.contextMenuStrip1.Size = new System.Drawing.Size(234, 379);
+		this.contextMenuStrip1.Closed += new System.Windows.Forms.ToolStripDropDownClosedEventHandler(contextMenuStrip1_Closed);
+		this.tsmHuongDan.Name = "tsmHuongDan";
+		this.tsmHuongDan.Size = new System.Drawing.Size(233, 22);
+		this.tsmHuongDan.Text = "Hu?ng d?n";
+		this.tsmHuongDan.Click += new System.EventHandler(tsmHuongDan_Click);
+		this.toolStripSeparator2.Name = "toolStripSeparator2";
+		this.toolStripSeparator2.Size = new System.Drawing.Size(230, 6);
+		this.tmsChuyenMa.Name = "tmsChuyenMa";
+		this.tmsChuyenMa.Size = new System.Drawing.Size(233, 22);
+		this.tmsChuyenMa.Text = "Chuy?n ma ti?ng vi?t";
+		this.tmsChuyenMa.Click += new System.EventHandler(tmsChuyenMa_Click);
+		this.tsmBangGoTat.Name = "tsmBangGoTat";
+		this.tsmBangGoTat.Size = new System.Drawing.Size(233, 22);
+		this.tsmBangGoTat.Text = "B?ng go t?t";
+		this.tsmBangGoTat.Click += new System.EventHandler(tsmBangGoTat_Click);
+		this.toolStripSeparator3.Name = "toolStripSeparator3";
+		this.toolStripSeparator3.Size = new System.Drawing.Size(230, 6);
+		this.tscBangMa.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+		this.tscBangMa.Items.AddRange(new object[1] { "Unicode" });
+		this.tscBangMa.Name = "tscBangMa";
+		this.tscBangMa.Size = new System.Drawing.Size(145, 23);
+		this.tscBangMa.SelectedIndexChanged += new System.EventHandler(tscBangMa_SelectedIndexChanged);
+		this.tscKieuGo.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+		this.tscKieuGo.Items.AddRange(new object[4] { "VNI", "Telex", "Telex m? r?ng", "VIQR" });
+		this.tscKieuGo.Name = "tscKieuGo";
+		this.tscKieuGo.Size = new System.Drawing.Size(145, 23);
+		this.tscKieuGo.SelectedIndexChanged += new System.EventHandler(tscKieuGo_SelectedIndexChanged);
+		this.toolStripSeparator4.Name = "toolStripSeparator4";
+		this.toolStripSeparator4.Size = new System.Drawing.Size(230, 6);
+		this.tsmTuyChonKhac.Font = new System.Drawing.Font("Tahoma", 8.25f, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, 163);
+		this.tsmTuyChonKhac.Name = "tsmTuyChonKhac";
+		this.tsmTuyChonKhac.Size = new System.Drawing.Size(233, 22);
+		this.tsmTuyChonKhac.Text = "Tùy ch?n khác";
+		this.tsmTuyChonKhac.Click += new System.EventHandler(tsmTuyChonKhac_Click);
+		this.tsmSuDungSendInput.Name = "tsmSuDungSendInput";
+		this.tsmSuDungSendInput.Size = new System.Drawing.Size(233, 22);
+		this.tsmSuDungSendInput.Text = "Dùng sendKey thay Clipboard";
+		this.tsmSuDungSendInput.Click += new System.EventHandler(tsmDungSendInput_Click);
+		this.tsmBoDauKieuMoi.Name = "tsmBoDauKieuMoi";
+		this.tsmBoDauKieuMoi.Size = new System.Drawing.Size(233, 22);
+		this.tsmBoDauKieuMoi.Text = "B? d?u u?,oà,oè thay ùy,òa,òe";
+		this.tsmBoDauKieuMoi.Click += new System.EventHandler(tsmBoDauKieuMoi_Click);
+		this.tsmboDauTrongAutocomplete.Name = "tsmboDauTrongAutocomplete";
+		this.tsmboDauTrongAutocomplete.Size = new System.Drawing.Size(233, 22);
+		this.tsmboDauTrongAutocomplete.Text = "B? d?u trong Autocomplete";
+		this.tsmboDauTrongAutocomplete.Click += new System.EventHandler(tsmboDauTrongAutocomplete_Click);
+		this.tscKTChinhTa.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+		this.tscKTChinhTa.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+		this.tscKTChinhTa.Items.AddRange(new object[3] { "Không dùng", "Co b?n", "D?y d?" });
+		this.tscKTChinhTa.Name = "tscKTChinhTa";
+		this.tscKTChinhTa.Size = new System.Drawing.Size(145, 23);
+		this.tscKTChinhTa.SelectedIndexChanged += new System.EventHandler(tscKTChinhTa_SelectedIndexChanged);
+		this.tsmKhoiDongCungWin.Name = "tsmKhoiDongCungWin";
+		this.tsmKhoiDongCungWin.Size = new System.Drawing.Size(233, 22);
+		this.tsmKhoiDongCungWin.Text = "Kh?i d?ng cùng Window";
+		this.tsmKhoiDongCungWin.Click += new System.EventHandler(tsmKhoiDongCungWin_Click);
+		this.toolStripSeparator1.Name = "toolStripSeparator1";
+		this.toolStripSeparator1.Size = new System.Drawing.Size(230, 6);
+		this.tsmdotNetKey.Font = new System.Drawing.Font("Segoe UI", 9f, System.Drawing.FontStyle.Bold);
+		this.tsmdotNetKey.Name = "tsmdotNetKey";
+		this.tsmdotNetKey.Size = new System.Drawing.Size(233, 22);
+		this.tsmdotNetKey.Text = "B?ng di?u khi?n";
+		this.tsmdotNetKey.Click += new System.EventHandler(tsmdotNetKey_Click);
+		this.tsDangky.Name = "tsDangky";
+		this.tsDangky.Size = new System.Drawing.Size(233, 22);
+		this.tsDangky.Text = "Dang ky s? d?ng";
+		this.tsDangky.Click += new System.EventHandler(tsDangky_Click);
+		this.tsRestart.Name = "tsRestart";
+		this.tsRestart.Size = new System.Drawing.Size(233, 22);
+		this.tsRestart.Text = "Kh?i d?ng l?i ?ng d?ng";
+		this.tsRestart.Click += new System.EventHandler(tsRestart_Click);
+		this.tsmThoat.Name = "tsmThoat";
+		this.tsmThoat.Size = new System.Drawing.Size(233, 22);
+		this.tsmThoat.Text = "Thoát";
+		this.tsmThoat.Click += new System.EventHandler(tsmThoat_Click);
+		this.chbBoDauKieuMoi.AutoSize = true;
+		this.chbBoDauKieuMoi.Location = new System.Drawing.Point(14, 22);
+		this.chbBoDauKieuMoi.Name = "chbBoDauKieuMoi";
+		this.chbBoDauKieuMoi.Size = new System.Drawing.Size(200, 19);
+		this.chbBoDauKieuMoi.TabIndex = 0;
+		this.chbBoDauKieuMoi.Text = "B? d?u u?, oà ,oè thay ùy, òa, òe";
+		this.chbBoDauKieuMoi.UseVisualStyleBackColor = true;
+		this.chbBoDauKieuMoi.CheckedChanged += new System.EventHandler(chbBoDauKieuMoi_CheckedChanged);
+		this.chbKhoiDongCungWin.AutoSize = true;
+		this.chbKhoiDongCungWin.Location = new System.Drawing.Point(14, 45);
+		this.chbKhoiDongCungWin.Name = "chbKhoiDongCungWin";
+		this.chbKhoiDongCungWin.Size = new System.Drawing.Size(159, 19);
+		this.chbKhoiDongCungWin.TabIndex = 1;
+		this.chbKhoiDongCungWin.Text = "Kh?i d?ng cùng Window";
+		this.chbKhoiDongCungWin.UseVisualStyleBackColor = true;
+		this.chbKhoiDongCungWin.CheckedChanged += new System.EventHandler(chbKhoiDongCungWin_CheckedChanged);
+		this.thoátToolStripMenuItem.Name = "thoátToolStripMenuItem";
+		this.thoátToolStripMenuItem.Size = new System.Drawing.Size(102, 22);
+		this.thoátToolStripMenuItem.Text = "Thoát";
+		this.chbBatHoiThoaiKhiKhoiDong.AutoSize = true;
+		this.chbBatHoiThoaiKhiKhoiDong.Location = new System.Drawing.Point(14, 22);
+		this.chbBatHoiThoaiKhiKhoiDong.Name = "chbBatHoiThoaiKhiKhoiDong";
+		this.chbBatHoiThoaiKhiKhoiDong.Size = new System.Drawing.Size(170, 19);
+		this.chbBatHoiThoaiKhiKhoiDong.TabIndex = 0;
+		this.chbBatHoiThoaiKhiKhoiDong.Text = "B?t h?i tho?i khi kh?i d?ng";
+		this.chbBatHoiThoaiKhiKhoiDong.UseVisualStyleBackColor = true;
+		this.tabControl1.Controls.Add(this.tabPage1);
+		this.tabControl1.Controls.Add(this.tabPage5);
+		this.tabControl1.Controls.Add(this.tabPage3);
+		this.tabControl1.Controls.Add(this.tabPage4);
+		this.tabControl1.Dock = System.Windows.Forms.DockStyle.Top;
+		this.tabControl1.Location = new System.Drawing.Point(0, 0);
+		this.tabControl1.Name = "tabControl1";
+		this.tabControl1.SelectedIndex = 0;
+		this.tabControl1.Size = new System.Drawing.Size(544, 416);
+		this.tabControl1.TabIndex = 0;
+		this.tabControl1.SelectedIndexChanged += new System.EventHandler(tabControl1_SelectedIndexChanged);
+		this.tabPage1.Controls.Add(this.CbbKieuGo);
+		this.tabPage1.Controls.Add(this.CbbBangma);
+		this.tabPage1.Controls.Add(this.groupBox4);
+		this.tabPage1.Controls.Add(this.btnChuyenMa);
+		this.tabPage1.Controls.Add(this.label3);
+		this.tabPage1.Controls.Add(this.btnHuongDan);
+		this.tabPage1.Controls.Add(this.bttClose);
+		this.tabPage1.Controls.Add(this.label2);
+		this.tabPage1.Controls.Add(this.groupBox1);
+		this.tabPage1.Controls.Add(this.groupBox3);
+		this.tabPage1.Controls.Add(this.groupBox2);
+		this.tabPage1.Location = new System.Drawing.Point(4, 24);
+		this.tabPage1.Name = "tabPage1";
+		this.tabPage1.Padding = new System.Windows.Forms.Padding(3);
+		this.tabPage1.Size = new System.Drawing.Size(536, 388);
+		this.tabPage1.TabIndex = 0;
+		this.tabPage1.Text = "C?u hình b? go";
+		this.tabPage1.UseVisualStyleBackColor = true;
+		this.CbbKieuGo.FormattingEnabled = true;
+		this.CbbKieuGo.Items.AddRange(new object[4] { "VNI", "Telex", "Telex m? r?ng", "VIQR" });
+		this.CbbKieuGo.Location = new System.Drawing.Point(105, 45);
+		this.CbbKieuGo.Name = "CbbKieuGo";
+		this.CbbKieuGo.Size = new System.Drawing.Size(269, 23);
+		this.CbbKieuGo.TabIndex = 1;
+		this.CbbKieuGo.SelectedIndexChanged += new System.EventHandler(CbbKieuGo_SelectedIndexChanged);
+		this.CbbBangma.FormattingEnabled = true;
+		this.CbbBangma.Items.AddRange(new object[1] { "Unicode" });
+		this.CbbBangma.Location = new System.Drawing.Point(105, 17);
+		this.CbbBangma.Name = "CbbBangma";
+		this.CbbBangma.Size = new System.Drawing.Size(269, 23);
+		this.CbbBangma.TabIndex = 0;
+		this.CbbBangma.SelectedIndexChanged += new System.EventHandler(CbbBangma_SelectedIndexChanged);
+		this.groupBox4.Controls.Add(this.cbbPhimTat);
+		this.groupBox4.Controls.Add(this.rdbAltZ);
+		this.groupBox4.Controls.Add(this.rdbCtrlShift);
+		this.groupBox4.Location = new System.Drawing.Point(42, 76);
+		this.groupBox4.Name = "groupBox4";
+		this.groupBox4.Size = new System.Drawing.Size(332, 57);
+		this.groupBox4.TabIndex = 2;
+		this.groupBox4.TabStop = false;
+		this.groupBox4.Text = "Phím chuy?n b?t t?t b? go";
+		this.cbbPhimTat.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+		this.cbbPhimTat.FormattingEnabled = true;
+		this.cbbPhimTat.Items.AddRange(new object[26]
+		{
+			"A", "B", "C", "D", "E", "F", "G", "H", "I", "J",
+			"K", "L", "M", "N", "O", "P", "Q", "R", "S", "T",
+			"U", "V", "W", "X", "Y", "Z"
+		});
+		this.cbbPhimTat.Location = new System.Drawing.Point(219, 21);
+		this.cbbPhimTat.Name = "cbbPhimTat";
+		this.cbbPhimTat.Size = new System.Drawing.Size(100, 23);
+		this.cbbPhimTat.TabIndex = 2;
+		this.rdbAltZ.AutoSize = true;
+		this.rdbAltZ.Location = new System.Drawing.Point(149, 22);
+		this.rdbAltZ.Name = "rdbAltZ";
+		this.rdbAltZ.Size = new System.Drawing.Size(56, 19);
+		this.rdbAltZ.TabIndex = 1;
+		this.rdbAltZ.TabStop = true;
+		this.rdbAltZ.Text = "ALT +";
+		this.rdbAltZ.UseVisualStyleBackColor = true;
+		this.rdbCtrlShift.AutoSize = true;
+		this.rdbCtrlShift.Checked = true;
+		this.rdbCtrlShift.Location = new System.Drawing.Point(12, 22);
+		this.rdbCtrlShift.Name = "rdbCtrlShift";
+		this.rdbCtrlShift.Size = new System.Drawing.Size(103, 19);
+		this.rdbCtrlShift.TabIndex = 0;
+		this.rdbCtrlShift.TabStop = true;
+		this.rdbCtrlShift.Text = "CTRL + SHIFT";
+		this.rdbCtrlShift.UseVisualStyleBackColor = true;
+		this.btnChuyenMa.Cursor = System.Windows.Forms.Cursors.Hand;
+		this.btnChuyenMa.Location = new System.Drawing.Point(403, 48);
+		this.btnChuyenMa.Name = "btnChuyenMa";
+		this.btnChuyenMa.Size = new System.Drawing.Size(90, 28);
+		this.btnChuyenMa.TabIndex = 7;
+		this.btnChuyenMa.Text = "Chuy?n ma";
+		this.btnChuyenMa.UseVisualStyleBackColor = true;
+		this.btnChuyenMa.Click += new System.EventHandler(btnChuyenMa_Click);
+		this.label3.AutoSize = true;
+		this.label3.Font = new System.Drawing.Font("Arial", 9f, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, 0);
+		this.label3.Location = new System.Drawing.Point(39, 49);
+		this.label3.Name = "label3";
+		this.label3.Size = new System.Drawing.Size(55, 15);
+		this.label3.TabIndex = 12;
+		this.label3.Text = "Ki?u go :";
+		this.btnHuongDan.Cursor = System.Windows.Forms.Cursors.Hand;
+		this.btnHuongDan.Location = new System.Drawing.Point(403, 14);
+		this.btnHuongDan.Name = "btnHuongDan";
+		this.btnHuongDan.Size = new System.Drawing.Size(90, 28);
+		this.btnHuongDan.TabIndex = 6;
+		this.btnHuongDan.Text = "Hu?ng d?n";
+		this.btnHuongDan.UseVisualStyleBackColor = true;
+		this.btnHuongDan.Click += new System.EventHandler(btnHuongDan_Click);
+		this.bttClose.Cursor = System.Windows.Forms.Cursors.Hand;
+		this.bttClose.Location = new System.Drawing.Point(403, 82);
+		this.bttClose.Name = "bttClose";
+		this.bttClose.Size = new System.Drawing.Size(90, 28);
+		this.bttClose.TabIndex = 8;
+		this.bttClose.Text = "Dóng";
+		this.bttClose.UseVisualStyleBackColor = true;
+		this.bttClose.Click += new System.EventHandler(bttClose_Click);
+		this.label2.AutoSize = true;
+		this.label2.Font = new System.Drawing.Font("Arial", 9f, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, 0);
+		this.label2.Location = new System.Drawing.Point(39, 19);
+		this.label2.Name = "label2";
+		this.label2.Size = new System.Drawing.Size(63, 15);
+		this.label2.TabIndex = 11;
+		this.label2.Text = "B?ng ma :";
+		this.groupBox1.Controls.Add(this.label4);
+		this.groupBox1.Controls.Add(this.cbbKTChinhTa);
+		this.groupBox1.Controls.Add(this.chbBoDauTrongAutoComplete);
+		this.groupBox1.Controls.Add(this.chbBoDauKieuMoi);
+		this.groupBox1.Controls.Add(this.chbSuDungSendInput);
+		this.groupBox1.Location = new System.Drawing.Point(42, 139);
+		this.groupBox1.Name = "groupBox1";
+		this.groupBox1.Size = new System.Drawing.Size(234, 131);
+		this.groupBox1.TabIndex = 3;
+		this.groupBox1.TabStop = false;
+		this.groupBox1.Text = "Xu?t ti?ng vi?t";
+		this.label4.AutoSize = true;
+		this.label4.Location = new System.Drawing.Point(14, 50);
+		this.label4.Name = "label4";
+		this.label4.Size = new System.Drawing.Size(102, 15);
+		this.label4.TabIndex = 1;
+		this.label4.Text = "Ki?m tra chính t?:";
+		this.cbbKTChinhTa.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+		this.cbbKTChinhTa.FormattingEnabled = true;
+		this.cbbKTChinhTa.Items.AddRange(new object[3] { "Không dùng", "Co b?n", "D?y d?" });
+		this.cbbKTChinhTa.Location = new System.Drawing.Point(127, 47);
+		this.cbbKTChinhTa.Name = "cbbKTChinhTa";
+		this.cbbKTChinhTa.Size = new System.Drawing.Size(96, 23);
+		this.cbbKTChinhTa.TabIndex = 2;
+		this.cbbKTChinhTa.SelectedIndexChanged += new System.EventHandler(cbbKTChinhTa_SelectedIndexChanged);
+		this.chbBoDauTrongAutoComplete.AutoSize = true;
+		this.chbBoDauTrongAutoComplete.Location = new System.Drawing.Point(14, 102);
+		this.chbBoDauTrongAutoComplete.Name = "chbBoDauTrongAutoComplete";
+		this.chbBoDauTrongAutoComplete.Size = new System.Drawing.Size(174, 19);
+		this.chbBoDauTrongAutoComplete.TabIndex = 4;
+		this.chbBoDauTrongAutoComplete.Text = "B? d?u trong Autocomplete";
+		this.chbBoDauTrongAutoComplete.UseVisualStyleBackColor = true;
+		this.chbBoDauTrongAutoComplete.CheckedChanged += new System.EventHandler(chbBoDauTrongAutoComplete_CheckedChanged);
+		this.chbSuDungSendInput.AutoSize = true;
+		this.chbSuDungSendInput.Location = new System.Drawing.Point(14, 75);
+		this.chbSuDungSendInput.Name = "chbSuDungSendInput";
+		this.chbSuDungSendInput.Size = new System.Drawing.Size(203, 19);
+		this.chbSuDungSendInput.TabIndex = 3;
+		this.chbSuDungSendInput.Text = "S? d?ng sendKey thay Clipboard";
+		this.chbSuDungSendInput.UseVisualStyleBackColor = true;
+		this.chbSuDungSendInput.CheckedChanged += new System.EventHandler(chbSuDungSendInput_CheckedChanged);
+		this.groupBox3.Controls.Add(this.chbChoPhepGoTat);
+		this.groupBox3.Controls.Add(this.chbGoTatKhiTatTiengViet);
+		this.groupBox3.Controls.Add(this.chbKhongCanCach);
+		this.groupBox3.Location = new System.Drawing.Point(287, 139);
+		this.groupBox3.Name = "groupBox3";
+		this.groupBox3.Size = new System.Drawing.Size(206, 131);
+		this.groupBox3.TabIndex = 4;
+		this.groupBox3.TabStop = false;
+		this.groupBox3.Text = "Tùy ch?n go t?t";
+		this.chbChoPhepGoTat.AutoSize = true;
+		this.chbChoPhepGoTat.Checked = true;
+		this.chbChoPhepGoTat.CheckState = System.Windows.Forms.CheckState.Checked;
+		this.chbChoPhepGoTat.Location = new System.Drawing.Point(21, 36);
+		this.chbChoPhepGoTat.Name = "chbChoPhepGoTat";
+		this.chbChoPhepGoTat.Size = new System.Drawing.Size(112, 19);
+		this.chbChoPhepGoTat.TabIndex = 0;
+		this.chbChoPhepGoTat.Text = "Cho phép go t?t";
+		this.chbChoPhepGoTat.UseVisualStyleBackColor = true;
+		this.chbGoTatKhiTatTiengViet.AutoSize = true;
+		this.chbGoTatKhiTatTiengViet.Location = new System.Drawing.Point(21, 64);
+		this.chbGoTatKhiTatTiengViet.Name = "chbGoTatKhiTatTiengViet";
+		this.chbGoTatKhiTatTiengViet.Size = new System.Drawing.Size(160, 19);
+		this.chbGoTatKhiTatTiengViet.TabIndex = 1;
+		this.chbGoTatKhiTatTiengViet.Text = "Go t?t c? khi t?t ti?ng vi?t";
+		this.chbGoTatKhiTatTiengViet.UseVisualStyleBackColor = true;
+		this.chbKhongCanCach.AutoSize = true;
+		this.chbKhongCanCach.Location = new System.Drawing.Point(21, 92);
+		this.chbKhongCanCach.Name = "chbKhongCanCach";
+		this.chbKhongCanCach.Size = new System.Drawing.Size(178, 19);
+		this.chbKhongCanCach.TabIndex = 2;
+		this.chbKhongCanCach.Text = "Go t?t không c?n nh?n cách";
+		this.chbKhongCanCach.UseVisualStyleBackColor = true;
+		this.groupBox2.Controls.Add(this.chbBatTheoDoi);
+		this.groupBox2.Controls.Add(this.chbBatHoiThoaiKhiKhoiDong);
+		this.groupBox2.Controls.Add(this.chbKhoiDongCungWin);
+		this.groupBox2.Location = new System.Drawing.Point(42, 279);
+		this.groupBox2.Name = "groupBox2";
+		this.groupBox2.Size = new System.Drawing.Size(451, 95);
+		this.groupBox2.TabIndex = 5;
+		this.groupBox2.TabStop = false;
+		this.groupBox2.Text = "H? th?ng";
+		this.chbBatTheoDoi.AutoSize = true;
+		this.chbBatTheoDoi.Enabled = false;
+		this.chbBatTheoDoi.Location = new System.Drawing.Point(14, 68);
+		this.chbBatTheoDoi.Name = "chbBatTheoDoi";
+		this.chbBatTheoDoi.Size = new System.Drawing.Size(91, 19);
+		this.chbBatTheoDoi.TabIndex = 2;
+		this.chbBatTheoDoi.Text = "B?t theo doi";
+		this.chbBatTheoDoi.UseVisualStyleBackColor = true;
+		this.chbBatTheoDoi.CheckedChanged += new System.EventHandler(chbBatTheoDoi_CheckedChanged);
+		this.tabPage5.Controls.Add(this.btnSua);
+		this.tabPage5.Controls.Add(this.btnXoa);
+		this.tabPage5.Controls.Add(this.btnThem);
+		this.tabPage5.Controls.Add(this.txtBang);
+		this.tabPage5.Controls.Add(this.txtThayThe);
+		this.tabPage5.Controls.Add(this.grdGotat);
+		this.tabPage5.Location = new System.Drawing.Point(4, 24);
+		this.tabPage5.Name = "tabPage5";
+		this.tabPage5.Padding = new System.Windows.Forms.Padding(3);
+		this.tabPage5.Size = new System.Drawing.Size(536, 388);
+		this.tabPage5.TabIndex = 4;
+		this.tabPage5.Text = "B?ng go t?t";
+		this.tabPage5.UseVisualStyleBackColor = true;
+		this.btnSua.Cursor = System.Windows.Forms.Cursors.Hand;
+		this.btnSua.Location = new System.Drawing.Point(464, 71);
+		this.btnSua.Name = "btnSua";
+		this.btnSua.Size = new System.Drawing.Size(59, 25);
+		this.btnSua.TabIndex = 4;
+		this.btnSua.Text = "S?a";
+		this.btnSua.UseVisualStyleBackColor = true;
+		this.btnSua.Click += new System.EventHandler(btnSua_Click);
+		this.btnXoa.Cursor = System.Windows.Forms.Cursors.Hand;
+		this.btnXoa.Location = new System.Drawing.Point(464, 104);
+		this.btnXoa.Name = "btnXoa";
+		this.btnXoa.Size = new System.Drawing.Size(59, 25);
+		this.btnXoa.TabIndex = 5;
+		this.btnXoa.Text = "Xóa";
+		this.btnXoa.UseVisualStyleBackColor = true;
+		this.btnXoa.Click += new System.EventHandler(btnXoa_Click);
+		this.btnThem.Cursor = System.Windows.Forms.Cursors.Hand;
+		this.btnThem.Location = new System.Drawing.Point(464, 39);
+		this.btnThem.Name = "btnThem";
+		this.btnThem.Size = new System.Drawing.Size(59, 25);
+		this.btnThem.TabIndex = 3;
+		this.btnThem.Text = "Thêm";
+		this.btnThem.UseVisualStyleBackColor = true;
+		this.btnThem.Click += new System.EventHandler(btnThem_Click);
+		this.txtBang.Font = new System.Drawing.Font("Arial", 9.75f, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, 0);
+		this.txtBang.Location = new System.Drawing.Point(101, 8);
+		this.txtBang.MaxLength = 500;
+		this.txtBang.Name = "txtBang";
+		this.txtBang.Size = new System.Drawing.Size(356, 22);
+		this.txtBang.TabIndex = 1;
+		this.txtThayThe.Font = new System.Drawing.Font("Arial", 9.75f, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, 0);
+		this.txtThayThe.Location = new System.Drawing.Point(7, 8);
+		this.txtThayThe.MaxLength = 10;
+		this.txtThayThe.Name = "txtThayThe";
+		this.txtThayThe.Size = new System.Drawing.Size(87, 22);
+		this.txtThayThe.TabIndex = 0;
+		this.grdGotat.AllowUserToAddRows = false;
+		this.grdGotat.AllowUserToDeleteRows = false;
+		this.grdGotat.Anchor = System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left;
+		this.grdGotat.ColumnHeadersHeightSizeMode = System.Windows.Forms.DataGridViewColumnHeadersHeightSizeMode.AutoSize;
+		this.grdGotat.ColumnHeadersVisible = false;
+		this.grdGotat.Columns.AddRange(this.Column1, this.Column2);
+		this.grdGotat.Location = new System.Drawing.Point(7, 39);
+		this.grdGotat.MultiSelect = false;
+		this.grdGotat.Name = "grdGotat";
+		this.grdGotat.ReadOnly = true;
+		this.grdGotat.RowHeadersVisible = false;
+		this.grdGotat.RowHeadersWidthSizeMode = System.Windows.Forms.DataGridViewRowHeadersWidthSizeMode.DisableResizing;
+		dataGridViewCellStyle.Font = new System.Drawing.Font("Tahoma", 9.75f, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, 0);
+		this.grdGotat.RowsDefaultCellStyle = dataGridViewCellStyle;
+		this.grdGotat.RowTemplate.Height = 16;
+		this.grdGotat.RowTemplate.Resizable = System.Windows.Forms.DataGridViewTriState.False;
+		this.grdGotat.Size = new System.Drawing.Size(450, 335);
+		this.grdGotat.TabIndex = 2;
+		this.grdGotat.CellClick += new System.Windows.Forms.DataGridViewCellEventHandler(dataGridView1_CellClick);
+		this.Column1.HeaderText = "Column1";
+		this.Column1.MaxInputLength = 10;
+		this.Column1.Name = "Column1";
+		this.Column1.ReadOnly = true;
+		this.Column1.Width = 70;
+		this.Column2.HeaderText = "Column2";
+		this.Column2.MaxInputLength = 200;
+		this.Column2.Name = "Column2";
+		this.Column2.ReadOnly = true;
+		this.Column2.Width = 240;
+		this.tabPage3.Controls.Add(this.richTextBox1);
+		this.tabPage3.Controls.Add(this.txtKiemTraCapNhat);
+		this.tabPage3.Controls.Add(this.btnKiemTraCapNhat);
+		this.tabPage3.Location = new System.Drawing.Point(4, 24);
+		this.tabPage3.Name = "tabPage3";
+		this.tabPage3.Padding = new System.Windows.Forms.Padding(2);
+		this.tabPage3.Size = new System.Drawing.Size(536, 388);
+		this.tabPage3.TabIndex = 2;
+		this.tabPage3.Text = "Thông tin";
+		this.tabPage3.UseVisualStyleBackColor = true;
+		this.richTextBox1.BackColor = System.Drawing.SystemColors.Window;
+		this.richTextBox1.Dock = System.Windows.Forms.DockStyle.Top;
+		this.richTextBox1.Font = new System.Drawing.Font("Vnk Times New Roman", 9.75f, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, 0);
+		this.richTextBox1.Location = new System.Drawing.Point(2, 2);
+		this.richTextBox1.Name = "richTextBox1";
+		this.richTextBox1.ReadOnly = true;
+		this.richTextBox1.Size = new System.Drawing.Size(532, 350);
+		this.richTextBox1.TabIndex = 0;
+		this.richTextBox1.Text = resources.GetString("richTextBox1.Text");
+		this.richTextBox1.LinkClicked += new System.Windows.Forms.LinkClickedEventHandler(richTextBox1_LinkClicked);
+		this.txtKiemTraCapNhat.Anchor = System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left | System.Windows.Forms.AnchorStyles.Right;
+		this.txtKiemTraCapNhat.Font = new System.Drawing.Font("Tahoma", 9.75f, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, 163);
+		this.txtKiemTraCapNhat.Location = new System.Drawing.Point(5, 360);
+		this.txtKiemTraCapNhat.Name = "txtKiemTraCapNhat";
+		this.txtKiemTraCapNhat.Size = new System.Drawing.Size(389, 23);
+		this.txtKiemTraCapNhat.TabIndex = 1;
+		this.btnKiemTraCapNhat.Anchor = System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Right;
+		this.btnKiemTraCapNhat.Cursor = System.Windows.Forms.Cursors.Hand;
+		this.btnKiemTraCapNhat.Location = new System.Drawing.Point(399, 360);
+		this.btnKiemTraCapNhat.Name = "btnKiemTraCapNhat";
+		this.btnKiemTraCapNhat.Size = new System.Drawing.Size(127, 23);
+		this.btnKiemTraCapNhat.TabIndex = 2;
+		this.btnKiemTraCapNhat.Text = "Dang ky s? d?ng";
+		this.btnKiemTraCapNhat.UseVisualStyleBackColor = true;
+		this.btnKiemTraCapNhat.Click += new System.EventHandler(btnKiemTraCapNhat_Click);
+		this.tabPage4.Controls.Add(this.txtTheodoi1);
+		this.tabPage4.Controls.Add(this.textBox2);
+		this.tabPage4.Controls.Add(this.txtTheodoi2);
+		this.tabPage4.Location = new System.Drawing.Point(4, 24);
+		this.tabPage4.Name = "tabPage4";
+		this.tabPage4.Padding = new System.Windows.Forms.Padding(3);
+		this.tabPage4.Size = new System.Drawing.Size(536, 388);
+		this.tabPage4.TabIndex = 3;
+		this.tabPage4.Text = "Theo doi";
+		this.tabPage4.UseVisualStyleBackColor = true;
+		this.txtTheodoi1.Anchor = System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left;
+		this.txtTheodoi1.Location = new System.Drawing.Point(7, 198);
+		this.txtTheodoi1.Multiline = true;
+		this.txtTheodoi1.Name = "txtTheodoi1";
+		this.txtTheodoi1.Size = new System.Drawing.Size(186, 178);
+		this.txtTheodoi1.TabIndex = 1;
+		this.textBox2.Anchor = System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom | System.Windows.Forms.AnchorStyles.Left | System.Windows.Forms.AnchorStyles.Right;
+		this.textBox2.Location = new System.Drawing.Point(201, 9);
+		this.textBox2.Multiline = true;
+		this.textBox2.Name = "textBox2";
+		this.textBox2.Size = new System.Drawing.Size(328, 367);
+		this.textBox2.TabIndex = 2;
+		this.txtTheodoi2.Location = new System.Drawing.Point(7, 9);
+		this.txtTheodoi2.Multiline = true;
+		this.txtTheodoi2.Name = "txtTheodoi2";
+		this.txtTheodoi2.Size = new System.Drawing.Size(186, 170);
+		this.txtTheodoi2.TabIndex = 0;
+		this.btnLuu.Cursor = System.Windows.Forms.Cursors.Hand;
+		this.btnLuu.Location = new System.Drawing.Point(438, 427);
+		this.btnLuu.Name = "btnLuu";
+		this.btnLuu.Size = new System.Drawing.Size(92, 27);
+		this.btnLuu.TabIndex = 4;
+		this.btnLuu.Text = "Luu";
+		this.btnLuu.UseVisualStyleBackColor = true;
+		this.btnLuu.Click += new System.EventHandler(btnLuu_Click);
+		this.cbbSetting.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+		this.cbbSetting.FormattingEnabled = true;
+		this.cbbSetting.Items.AddRange(new object[5] { "Setting1", "Setting2", "Setting3", "Setting4", "Setting5" });
+		this.cbbSetting.Location = new System.Drawing.Point(242, 430);
+		this.cbbSetting.Name = "cbbSetting";
+		this.cbbSetting.Size = new System.Drawing.Size(178, 23);
+		this.cbbSetting.TabIndex = 3;
+		this.cbbSetting.SelectedIndexChanged += new System.EventHandler(cbbSetting_SelectedIndexChanged);
+		this.btnThuMucThietLap.Cursor = System.Windows.Forms.Cursors.Hand;
+		this.btnThuMucThietLap.Location = new System.Drawing.Point(104, 427);
+		this.btnThuMucThietLap.Name = "btnThuMucThietLap";
+		this.btnThuMucThietLap.Size = new System.Drawing.Size(133, 28);
+		this.btnThuMucThietLap.TabIndex = 2;
+		this.btnThuMucThietLap.Text = "Thu m?c luu thi?t l?p";
+		this.btnThuMucThietLap.UseVisualStyleBackColor = true;
+		this.btnThuMucThietLap.Click += new System.EventHandler(btnThuMucThietLap_Click);
+		this.btnThietLapSan1.Cursor = System.Windows.Forms.Cursors.Hand;
+		this.btnThietLapSan1.Location = new System.Drawing.Point(8, 427);
+		this.btnThietLapSan1.Name = "btnThietLapSan1";
+		this.btnThietLapSan1.Size = new System.Drawing.Size(90, 28);
+		this.btnThietLapSan1.TabIndex = 1;
+		this.btnThietLapSan1.Text = "M?c d?nh";
+		this.btnThietLapSan1.UseVisualStyleBackColor = true;
+		this.btnThietLapSan1.Click += new System.EventHandler(btnThietLapSan1_Click);
+		this.timer1.Enabled = true;
+		this.timer1.Interval = 50;
+		this.timer1.Tick += new System.EventHandler(MouseMoved);
+		this.toolStripSeparator5.Name = "toolStripSeparator5";
+		this.toolStripSeparator5.Size = new System.Drawing.Size(230, 6);
+		base.AutoScaleDimensions = new System.Drawing.SizeF(7f, 15f);
+		base.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
+		base.ClientSize = new System.Drawing.Size(544, 461);
+		base.Controls.Add(this.tabControl1);
+		base.Controls.Add(this.btnLuu);
+		base.Controls.Add(this.cbbSetting);
+		base.Controls.Add(this.btnThuMucThietLap);
+		base.Controls.Add(this.btnThietLapSan1);
+		this.Font = new System.Drawing.Font("Microsoft Sans Serif", 9f, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, 0);
+		base.Icon = (System.Drawing.Icon)resources.GetObject("$this.Icon");
+		base.KeyPreview = true;
+		base.MaximizeBox = false;
+		this.MaximumSize = new System.Drawing.Size(560, 500);
+		base.MinimizeBox = false;
+		base.Name = "frmVnKey";
+		base.ShowInTaskbar = false;
+		base.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
+		this.Text = "B? GO DAN T?C VI?T (VnKey c2024 Dat Viet Join Stock Corporation)";
+		base.TopMost = true;
+		base.Shown += new System.EventHandler(frmVnKey_Shown);
+		this.contextMenuStrip1.ResumeLayout(false);
+		this.tabControl1.ResumeLayout(false);
+		this.tabPage1.ResumeLayout(false);
+		this.tabPage1.PerformLayout();
+		this.groupBox4.ResumeLayout(false);
+		this.groupBox4.PerformLayout();
+		this.groupBox1.ResumeLayout(false);
+		this.groupBox1.PerformLayout();
+		this.groupBox3.ResumeLayout(false);
+		this.groupBox3.PerformLayout();
+		this.groupBox2.ResumeLayout(false);
+		this.groupBox2.PerformLayout();
+		this.tabPage5.ResumeLayout(false);
+		this.tabPage5.PerformLayout();
+		((System.ComponentModel.ISupportInitialize)this.grdGotat).EndInit();
+		this.tabPage3.ResumeLayout(false);
+		this.tabPage3.PerformLayout();
+		this.tabPage4.ResumeLayout(false);
+		this.tabPage4.PerformLayout();
+		base.ResumeLayout(false);
+	}
+}

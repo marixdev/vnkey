@@ -73,7 +73,7 @@ jobs:
           $stagingDir = "vnkey-windows-$version"
           New-Item -ItemType Directory -Path $stagingDir -Force
           Copy-Item "vnkey-windows/target/release/vnkey.exe" "$stagingDir/"
-          Copy-Item -Recurse "fonts" "$stagingDir/fonts"
+          Copy-Item -Recurse "ede-fonts" "$stagingDir/ede-fonts"
           if (Test-Path "vnkey-windows/target/release/virustotal.txt") {
             Copy-Item "vnkey-windows/target/release/virustotal.txt" "$stagingDir/"
           }
