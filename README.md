@@ -69,7 +69,9 @@ sudo dpkg -i vnkey-fcitx5_1.0.1_amd64.deb
 sudo dnf install ./vnkey-fcitx5-1.0.1-1.x86_64.rpm
 
 # Arch Linux
-sudo pacman -U vnkey-fcitx5-1.0.1-1-x86_64.pkg.tar.zst
+paru -S fcitx5-vnkey-bin
+# hoặc
+yay -S fcitx5-vnkey-bin
 ```
 
 #### NixOS (Fcitx5)
@@ -110,7 +112,9 @@ sudo dpkg -i vnkey-ibus_1.0.1_amd64.deb
 sudo dnf install ./vnkey-ibus-1.0.1-1.x86_64.rpm
 
 # Arch Linux
-sudo pacman -U vnkey-ibus-1.0.1-1-x86_64.pkg.tar.zst
+paru -S ibus-vnkey-bin
+# hoặc
+yay -S ibus-vnkey-bin
 ```
 
 #### NixOS (IBus)
