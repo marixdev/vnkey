@@ -314,7 +314,7 @@ static void removeLastChars(NSMutableString *str, NSUInteger count) {
     [menu addItem:[NSMenuItem separatorItem]];
 
     /* Kiểu gõ */
-    NSArray *methods = @[@"Telex", @"Simple Telex", @"VNI", @"VIQR"];
+    NSArray *methods = @[@"Telex", @"Simple Telex", @"VNI", @"VIQR", @"Microsoft Vietnamese"];
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     int currentIM = (int)[defaults integerForKey:kVnKeyInputMethod];
     for (int i = 0; i < (int)methods.count; i++) {
@@ -361,6 +361,10 @@ static void removeLastChars(NSMutableString *str, NSUInteger count) {
 
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     [defaults setInteger:im forKey:kVnKeyInputMethod];
+
+    /* Thông báo các controller khác cập nhật kiểu gõ */
+    [[NSNotificationCenter defaultCenter]
+        postNotificationName:@"VnKeyPreferencesChanged" object:nil];
 }
 
 - (void)showPreferences:(id)sender {

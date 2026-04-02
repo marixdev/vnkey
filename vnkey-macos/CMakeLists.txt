@@ -57,8 +57,8 @@ set_target_properties(${APP_NAME} PROPERTIES
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/resources/Info.plist"
     MACOSX_BUNDLE_BUNDLE_NAME "${APP_NAME}"
     MACOSX_BUNDLE_GUI_IDENTIFIER "${BUNDLE_ID}"
-    MACOSX_BUNDLE_BUNDLE_VERSION "1.0.1"
-    MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0.1"
+    MACOSX_BUNDLE_BUNDLE_VERSION "1.0.3"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0.3"
     XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "-"
 )
 
@@ -67,6 +67,24 @@ set(ICON_FILE "${CMAKE_SOURCE_DIR}/resources/VnKey.icns")
 if(EXISTS "${ICON_FILE}")
     target_sources(${APP_NAME} PRIVATE "${ICON_FILE}")
     set_source_files_properties("${ICON_FILE}" PROPERTIES
+        MACOSX_PACKAGE_LOCATION "Resources"
+    )
+endif()
+
+# Copy .tiff menu bar icon vào bundle
+set(TIFF_FILE "${CMAKE_SOURCE_DIR}/resources/VnKey.tiff")
+if(EXISTS "${TIFF_FILE}")
+    target_sources(${APP_NAME} PRIVATE "${TIFF_FILE}")
+    set_source_files_properties("${TIFF_FILE}" PROPERTIES
+        MACOSX_PACKAGE_LOCATION "Resources"
+    )
+endif()
+
+# Fallback: copy PNG vào bundle nếu .icns/.tiff chưa có
+set(PNG_FILE "${CMAKE_SOURCE_DIR}/resources/VnKey.png")
+if(EXISTS "${PNG_FILE}")
+    target_sources(${APP_NAME} PRIVATE "${PNG_FILE}")
+    set_source_files_properties("${PNG_FILE}" PROPERTIES
         MACOSX_PACKAGE_LOCATION "Resources"
     )
 endif()

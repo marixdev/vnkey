@@ -28,26 +28,51 @@ build_engine() {
 
 build_icon() {
     local icns="resources/VnKey.icns"
+    local tiff="resources/VnKey.tiff"
     local png="resources/VnKey.png"
-    if [[ -f "$icns" ]]; then
+    if [[ -f "$icns" ]] && [[ -f "$tiff" ]]; then
         return
     fi
-    if ! command -v sips &>/dev/null || ! command -v iconutil &>/dev/null; then
-        echo "WARN: sips/iconutil not available, skipping .icns generation"
+    if ! command -v sips &>/dev/null; then
+        echo "WARN: sips not available, skipping icon generation"
         return
     fi
-    echo "==> Generate VnKey.icns from PNG..."
-    local iconset="$BUILD_DIR/VnKey.iconset"
-    mkdir -p "$iconset"
-    for size in 16 32 128 256 512; do
-        sips -z $size $size "$png" --out "$iconset/icon_${size}x${size}.png" >/dev/null
-        local double=$((size * 2))
-        if [[ $double -le 1024 ]]; then
-            sips -z $double $double "$png" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+
+    mkdir -p "$BUILD_DIR"
+
+    # Generate .tiff for menu bar icon (16x16 + 32x32 multi-resolution)
+    if [[ ! -f "$tiff" ]]; then
+        echo "==> Generate VnKey.tiff for menu bar..."
+        sips -z 16 16 "$png" --out "$BUILD_DIR/VnKey_16.png" >/dev/null
+        sips -z 32 32 "$png" --out "$BUILD_DIR/VnKey_32.png" >/dev/null
+        sips -s format tiff "$BUILD_DIR/VnKey_16.png" --out "$BUILD_DIR/VnKey_16.tiff" >/dev/null
+        sips -s format tiff "$BUILD_DIR/VnKey_32.png" --out "$BUILD_DIR/VnKey_32.tiff" >/dev/null
+        if command -v tiffutil &>/dev/null; then
+            tiffutil -cat "$BUILD_DIR/VnKey_16.tiff" "$BUILD_DIR/VnKey_32.tiff" -out "$tiff"
+        else
+            cp "$BUILD_DIR/VnKey_16.tiff" "$tiff"
         fi
-    done
-    iconutil -c icns -o "$icns" "$iconset"
-    rm -rf "$iconset"
+    fi
+
+    # Generate .icns for app icon
+    if [[ ! -f "$icns" ]]; then
+        if ! command -v iconutil &>/dev/null; then
+            echo "WARN: iconutil not available, skipping .icns generation"
+            return
+        fi
+        echo "==> Generate VnKey.icns from PNG..."
+        local iconset="$BUILD_DIR/VnKey.iconset"
+        mkdir -p "$iconset"
+        for size in 16 32 128 256 512; do
+            sips -z $size $size "$png" --out "$iconset/icon_${size}x${size}.png" >/dev/null
+            local double=$((size * 2))
+            if [[ $double -le 1024 ]]; then
+                sips -z $double $double "$png" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+            fi
+        done
+        iconutil -c icns -o "$icns" "$iconset"
+        rm -rf "$iconset"
+    fi
 }
 
 build_app() {

@@ -275,12 +275,18 @@ fn run_config() {
     let auto_start = is_auto_start_enabled();
     let run_admin = crate::tray::get_run_as_admin();
     let html = build_html(im, cs, spell, free, modern, ede, macro_en, auto_start, run_admin);
-    webview::run_webview(&format!("VnKey {VERSION}"), 560.0, 340.0, &html, handle_ipc);
+    webview::run_webview(&format!("VnKey {VERSION}"), 560.0, 380.0, &html, handle_ipc);
 }
 
 // ── Macro management window ──────────────────────────────────────────────────
 
-fn open_macro_window() {
+pub fn open_macro_window() {
+    std::thread::spawn(|| {
+        run_macro_window();
+    });
+}
+
+fn run_macro_window() {
     // Đọc macros hiện tại
     let macros_json = {
         let g = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
@@ -336,6 +342,30 @@ function del(i){{
   cmd({{cmd:'macro_save',data:JSON.stringify(macros)}});
 }}
 render();
+// Vietnamese input via IPC (SendInput không hoạt động trong WebView2)
+window.__vnkey_apply=function(b,t){{
+  var el=document.activeElement;
+  if(!el||el.selectionStart===undefined)return;
+  var p=el.selectionStart,v=el.value;
+  var before=v.substring(0,p-b),after=v.substring(p);
+  el.value=before+t+after;
+  el.selectionStart=el.selectionEnd=before.length+t.length;
+  // Trigger input event for any listeners
+  el.dispatchEvent(new Event('input',{{bubbles:true}}));
+}};
+document.addEventListener('keydown',function(e){{
+  if(e.ctrlKey||e.altKey||e.metaKey)return;
+  var el=document.activeElement;
+  if(!el||(el.tagName!=='INPUT'&&el.tagName!=='TEXTAREA'))return;
+  if(e.key==='Backspace'){{ cmd({{cmd:'vi_bs'}}); return; }}
+  if(e.key==='Enter'||e.key==='Tab'||e.key==='Escape'){{ cmd({{cmd:'vi_reset'}}); return; }}
+  if(e.key===' '){{ cmd({{cmd:'vi_space'}}); return; }}
+  if(e.key.length!==1)return;
+  var c=e.key.charCodeAt(0);
+  if(c<32||c>126)return;
+  e.preventDefault();
+  cmd({{cmd:'vi_key',key:e.key}});
+}});
 </script>
 "##);
 
@@ -359,6 +389,46 @@ fn handle_macro_ipc(body: &str, proxy: tao::event_loop::EventLoopProxy<UiEvent>)
             crate::config::save();
         }
         "macro_close" => { let _ = proxy.send_event(UiEvent::Close); }
+        // Vietnamese input via IPC — xử lý phím trong WebView2 input fields
+        "vi_key" => {
+            let key = msg["key"].as_str().unwrap_or("");
+            if key.len() != 1 { return; }
+            let ascii = key.as_bytes()[0];
+            let (backs, text) = if let Ok(mut g) = ENGINE.lock() {
+                if let Some(s) = g.as_mut() {
+                    s.sync_options();
+                    let r = s.engine.process(ascii as u32);
+                    let t = String::from_utf8_lossy(&r.output).to_string();
+                    (r.backspaces, t)
+                } else { (0, String::new()) }
+            } else { (0, String::new()) };
+            // If engine didn't produce output, insert the original char
+            let out = if text.is_empty() { key.to_string() } else { text };
+            let js = format!("window.__vnkey_apply({},{})", backs, serde_json::to_string(&out).unwrap_or_default());
+            let _ = proxy.send_event(UiEvent::Eval(js));
+        }
+        "vi_bs" => {
+            if let Ok(mut g) = ENGINE.lock() {
+                if let Some(s) = g.as_mut() {
+                    let r = s.engine.process_backspace();
+                    if r.processed && r.backspaces > 1 {
+                        let t = String::from_utf8_lossy(&r.output).to_string();
+                        let js = format!("window.__vnkey_apply({},{})", r.backspaces, serde_json::to_string(&t).unwrap_or_default());
+                        let _ = proxy.send_event(UiEvent::Eval(js));
+                    }
+                }
+            }
+        }
+        "vi_space" => {
+            if let Ok(mut g) = ENGINE.lock() {
+                if let Some(s) = g.as_mut() { s.engine.soft_reset(); }
+            }
+        }
+        "vi_reset" => {
+            if let Ok(mut g) = ENGINE.lock() {
+                if let Some(s) = g.as_mut() { s.engine.reset(); }
+            }
+        }
         _ => {}
     }
 }

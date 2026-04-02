@@ -48,6 +48,10 @@ const IDM_CONVERTER: u16 = 401;
 const IDM_BLACKLIST: u16 = 402;
 const IDM_INFO: u16 = 403;
 const IDM_HOTKEY: u16 = 404;
+const IDM_APPCS: u16 = 405;
+const IDM_MACROTBL: u16 = 406;
+const IDM_OPT_EDE: u16 = 303;
+const IDM_OPT_MACRO: u16 = 304;
 const IDM_RUNAS: u16 = 500;
 const IDM_EXIT: u16 = 900;
 
@@ -169,7 +173,7 @@ fn show_context_menu(hwnd: HWND) {
         let menu = CreatePopupMenu().unwrap();
 
         // Đọc trạng thái hiện tại
-        let (viet_mode, im, cs, spell, free, modern) = {
+        let (viet_mode, im, cs, spell, free, modern, ede, macro_en) = {
             let guard = match ENGINE.lock() {
                 Ok(g) => g,
                 Err(_) => return,
@@ -182,6 +186,8 @@ fn show_context_menu(hwnd: HWND) {
                     s.spell_check,
                     s.free_marking,
                     s.modern_style,
+                    s.ede_mode,
+                    s.macro_enabled,
                 ),
                 None => return,
             }
@@ -260,10 +266,12 @@ fn show_context_menu(hwnd: HWND) {
         AppendMenuW(menu, MF_SEPARATOR, 0, None).ok();
 
         // Tùy chọn
-        let opt_items: [(u16, PCWSTR, bool); 3] = [
+        let opt_items: [(u16, PCWSTR, bool); 5] = [
             (IDM_OPT_SPELL, w!("Kiểm tra chính tả"), spell),
             (IDM_OPT_FREE, w!("Bỏ dấu tự do"), free),
             (IDM_OPT_MODERN, w!("Kiểu mới (oà, uý)"), modern),
+            (IDM_OPT_EDE, w!("Tiếng Tây Nguyên (Êđê)"), ede),
+            (IDM_OPT_MACRO, w!("Gõ tắt (Auto-text)"), macro_en),
         ];
         for (id, text, checked) in &opt_items {
             let flags = MF_STRING | if *checked { MF_CHECKED } else { MF_UNCHECKED };
@@ -280,6 +288,12 @@ fn show_context_menu(hwnd: HWND) {
 
         // Loại trừ
         AppendMenuW(menu, MF_STRING, IDM_BLACKLIST as usize, w!("🚫 Loại trừ ứng dụng...")).ok();
+
+        // Bảng mã theo app
+        AppendMenuW(menu, MF_STRING, IDM_APPCS as usize, w!("📋 Bảng mã theo app...")).ok();
+
+        // Gõ tắt
+        AppendMenuW(menu, MF_STRING, IDM_MACROTBL as usize, w!("📝 Gõ tắt...")).ok();
 
         // Giới thiệu
         AppendMenuW(menu, MF_STRING, IDM_INFO as usize, w!("ℹ Giới thiệu...")).ok();
@@ -398,6 +412,18 @@ pub fn handle_menu_command(hwnd: HWND, id: u16) {
             drop(guard);
             crate::config::save();
         }
+        IDM_OPT_EDE => {
+            state.ede_mode = !state.ede_mode;
+            state.sync_options();
+            drop(guard);
+            crate::config::save();
+        }
+        IDM_OPT_MACRO => {
+            state.macro_enabled = !state.macro_enabled;
+            state.sync_options();
+            drop(guard);
+            crate::config::save();
+        }
         IDM_CONFIG => {
             drop(guard);
             crate::gui::open_config_window();
@@ -421,6 +447,16 @@ pub fn handle_menu_command(hwnd: HWND, id: u16) {
         IDM_HOTKEY => {
             drop(guard);
             crate::hotkey::open_hotkey_window();
+            return;
+        }
+        IDM_APPCS => {
+            drop(guard);
+            crate::app_charset::open_app_charset_window();
+            return;
+        }
+        IDM_MACROTBL => {
+            drop(guard);
+            crate::gui::open_macro_window();
             return;
         }
         IDM_RUNAS => {

@@ -267,6 +267,13 @@ unsafe extern "system" fn ll_keyboard_proc(
         }
     }
 
+    // VnKey's own windows: hook pass-through, Vietnamese xử lý qua JS+IPC.
+    // Vẫn cho Ctrl+Shift toggle hoạt động (xử lý ở keyup handler bên trên).
+    if crate::send::is_self() {
+        crate::debug_log::log("  SELF_PASSTHROUGH");
+        return call_next(code, wparam, lparam);
+    }
+
     // Bỏ qua phím có Ctrl, Alt hoặc Win (phím tắt hệ thống)
     let ctrl = GetAsyncKeyState(VK_CONTROL.0 as i32) as u16 & 0x8000 != 0;
     let alt = GetAsyncKeyState(VK_MENU.0 as i32) as u16 & 0x8000 != 0;
@@ -377,10 +384,27 @@ unsafe extern "system" fn ll_keyboard_proc(
             return block_key(vk);
         }
         VK_SPACE => {
-            // Soft reset: lưu trạng thái để backspace sau dấu cách có thể khôi phục
             if let Ok(mut guard) = ENGINE.try_lock() {
                 if let Some(state) = guard.as_mut() {
-                    state.engine.soft_reset();
+                    // Khi macro bật: gọi process(0x20) để engine kiểm tra macro expansion
+                    if state.macro_enabled && !state.engine.macro_table.is_empty() {
+                        state.sync_options();
+                        let result = state.engine.process(0x20);
+                        if result.processed && (result.backspaces > 0 || !result.output.is_empty()) {
+                            let utf8_text = String::from_utf8_lossy(&result.output).to_string();
+                            let effective_cs = crate::app_charset::get_current_app_charset()
+                                .unwrap_or(state.output_charset);
+                            let (text, raw_bytes) = convert_output(&utf8_text, effective_cs);
+                            drop(guard);
+                            crate::send::send_output(result.backspaces, &text, raw_bytes.as_deref());
+                            crate::debug_log::log_elapsed("HOOK_TOTAL", hook_start);
+                            return block_key(vk);
+                        }
+                        // Không khớp macro — process() đã gọi soft_reset() bên trong
+                    } else {
+                        // Macro tắt: soft reset như cũ
+                        state.engine.soft_reset();
+                    }
                 }
             }
             if crate::send::is_using_vk_back() {

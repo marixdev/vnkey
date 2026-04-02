@@ -25,6 +25,10 @@ static IS_CONSOLE: AtomicBool = AtomicBool::new(false);
 /// → gõ password login OS trong VM không được, phím bị nuốt.
 static IS_VM: AtomicBool = AtomicBool::new(false);
 
+/// Foreground là chính VnKey (WebView2 dialog). Hook pass-through hoàn toàn,
+/// Vietnamese input được xử lý qua JavaScript + IPC bên trong WebView2.
+static IS_SELF: AtomicBool = AtomicBool::new(false);
+
 /// Cờ đánh dấu VnKey đang inject phím qua SendInput.
 /// Hook kiểm tra cờ này ngoài dwExtraInfo để nhận diện phím của chính mình,
 /// phòng trường hợp VMware/RDP/VNC không giữ nguyên dwExtraInfo.
@@ -40,7 +44,10 @@ const VK_BACK_APPS: &[&str] = &[
     "wps.exe", "wpp.exe", "et.exe",     // WPS Office
     "WINWORD.EXE", "EXCEL.EXE", "POWERPNT.EXE", // MS Office
     // Trình duyệt Firefox-based: Shift+Left không hoạt động trên thanh tìm kiếm/địa chỉ
-    "librewolf.exe", "waterfox.exe", "mullvad-browser.exe",
+    "firefox.exe", "librewolf.exe", "waterfox.exe", "mullvad-browser.exe",
+    "zen.exe",                                    // Zen Browser (Firefox-based)
+    // Electron apps có custom editor (Shift+Left bị chặn/hoạt động sai)
+    "Notion.exe",
 ];
 
 /// Console apps: cần VK_BACK + WriteConsoleInputW cho Unicode text.
@@ -77,6 +84,16 @@ pub fn update_backspace_method() {
         crate::debug_log::log(&format!("  VM_MODE exe={:?}", exe));
     }
 
+    // Detect self (VnKey's own WebView2 windows): hook pass-through,
+    // Vietnamese input xử lý qua JS+IPC trong WebView2.
+    let is_self = exe.as_ref()
+        .map(|e| e.eq_ignore_ascii_case("vnkey.exe"))
+        .unwrap_or(false);
+    IS_SELF.store(is_self, Ordering::Relaxed);
+    if is_self {
+        crate::debug_log::log(&format!("  SELF_MODE exe={:?}", exe));
+    }
+
     let is_console = exe.as_ref()
         .map(|e| CONSOLE_APPS.iter().any(|app| app.eq_ignore_ascii_case(e)))
         .unwrap_or(false);
@@ -99,6 +116,11 @@ pub fn is_using_vk_back() -> bool {
 /// Foreground là VM/RDP — hook KHÔNG chặn, để native pass-through.
 pub fn is_vm_app() -> bool {
     IS_VM.load(Ordering::Relaxed)
+}
+
+/// Foreground là chính VnKey — hook pass-through, JS+IPC xử lý Vietnamese.
+pub fn is_self() -> bool {
+    IS_SELF.load(Ordering::Relaxed)
 }
 
 pub fn send_pending_output() {

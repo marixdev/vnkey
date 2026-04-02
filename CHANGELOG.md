@@ -26,6 +26,9 @@
 - Lưu/nạp `macro_enabled` và bảng macros (JSON) trong config
 - Thêm checkbox "Tiếng Tây Nguyên (Êđê)" trong cửa sổ cấu hình
 - Lưu/nạp `ede_mode` trong config.json
+- **Sửa lỗi gõ tắt (macro) không hoạt động**: phím Space đi qua `engine.process()` khi macro bật, thay vì chỉ `soft_reset()` — macro expansion chỉ kích hoạt trong `process()`
+- **Sửa lỗi gõ dấu trên Firefox** (issue #17): thêm `firefox.exe`, `zen.exe` vào danh sách VK_BACK — Shift+Left không hoạt động trên thanh địa chỉ/nội dung Firefox
+- **Sửa lỗi gõ dấu trên Notion Desktop**: thêm `Notion.exe` vào danh sách VK_BACK — Notion có custom editor (React) không tương thích Shift+Left
 
 ### vnkey-fcitx5
 - Thêm toggle "Gõ tắt" trong menu tray, lưu/nạp macros trong config JSON
@@ -44,6 +47,10 @@
 - Thêm tùy chọn `VnKeyMacroEnabled` + `VnKeyMacros` trong Preferences
 - Thêm tùy chọn `VnKeyEdeMode` trong Preferences
 - Cập nhật C header cho `vnkey_engine_set_options` (thêm `ede_mode`, `macro_enabled`)
+- **Sửa lỗi chọn VNI không có tác dụng** (issue #17): `selectInputMethod:` giờ post notification `VnKeyPreferencesChanged` để cập nhật tất cả controller instances
+- Thêm "Microsoft Vietnamese" vào menu kiểu gõ (nhất quán với Preferences)
+- **Sửa lỗi không có icon trên menu bar** (issue #17): tạo `VnKey.tiff` (multi-resolution 16+32px) cho `tsInputMethodIconFileKey`, copy cả `.tiff` và `.png` vào bundle
+- Cập nhật phiên bản lên 1.0.3
 
 ---
 

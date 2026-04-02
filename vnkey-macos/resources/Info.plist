@@ -13,10 +13,10 @@
     <string>dev.marix.inputmethod.VnKey</string>
 
     <key>CFBundleVersion</key>
-    <string>1.0.1</string>
+    <string>1.0.3</string>
 
     <key>CFBundleShortVersionString</key>
-    <string>1.0.1</string>
+    <string>1.0.3</string>
 
     <key>CFBundlePackageType</key>
     <string>APPL</string>
