@@ -60,13 +60,16 @@ jobs:
           # Create install script
           cat > dmg-stage/install.sh << 'SCRIPT'
           #!/bin/bash
-          DEST="$HOME/Library/Input Methods"
-          mkdir -p "$DEST"
+          DEST="/Applications"
           rm -rf "$DEST/VnKey.app"
           cp -R "$(dirname "$0")/VnKey.app" "$DEST/"
           echo "VnKey đã được cài vào $DEST"
-          echo "Vào System Settings > Keyboard > Input Sources để thêm VnKey."
-          echo "Nếu không thấy, đăng xuất và đăng nhập lại."
+          echo ""
+          echo "Bước tiếp theo:"
+          echo "1. Mở VnKey.app"
+          echo "2. Cấp quyền Accessibility khi được hỏi"
+          echo "   (System Settings → Privacy & Security → Accessibility → bật VnKey)"
+          echo "3. VnKey sẽ hiển thị icon Vi/En trên menu bar"
           SCRIPT
           chmod +x dmg-stage/install.sh
 

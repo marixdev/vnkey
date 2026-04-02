@@ -20,13 +20,13 @@ add_library(vnkey_engine STATIC IMPORTED)
 set_target_properties(vnkey_engine PROPERTIES IMPORTED_LOCATION "${ENGINE_LIB}")
 add_dependencies(vnkey_engine vnkey_engine_build)
 
-# ==================== VnKey.app (Input Method) ====================
+# ==================== VnKey.app (CGEventTap) ====================
 set(APP_NAME "VnKey")
 set(BUNDLE_ID "dev.marix.inputmethod.VnKey")
 
 add_executable(${APP_NAME} MACOSX_BUNDLE
     src/main.m
-    src/VnKeyInputController.m
+    src/VnKeyEventTap.m
     src/VnKeyAppDelegate.m
     src/VnKeyPreferences.m
 )
@@ -36,16 +36,16 @@ target_include_directories(${APP_NAME} PRIVATE
     "${ENGINE_DIR}/target/release"
 )
 
-# Frameworks
+# Frameworks — CGEventTap cần ApplicationServices, không cần InputMethodKit
 find_library(COCOA_FW Cocoa REQUIRED)
-find_library(IMKIT_FW InputMethodKit REQUIRED)
 find_library(CARBON_FW Carbon REQUIRED)
+find_library(APPSERVICES_FW ApplicationServices REQUIRED)
 
 target_link_libraries(${APP_NAME} PRIVATE
     vnkey_engine
     ${COCOA_FW}
-    ${IMKIT_FW}
     ${CARBON_FW}
+    ${APPSERVICES_FW}
     "-framework Security"
     "-framework SystemConfiguration"
     resolv
@@ -89,12 +89,12 @@ if(EXISTS "${PNG_FILE}")
     )
 endif()
 
-# Install: copy vào ~/Library/Input Methods/
+# Install: copy vào /Applications/ (CGEventTap app, không phải Input Method)
 install(TARGETS ${APP_NAME}
-    BUNDLE DESTINATION "$ENV{HOME}/Library/Input Methods"
+    BUNDLE DESTINATION "/Applications"
 )
 
-# Ad-hoc codesign sau build (XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY chỉ hoạt động với Xcode generator)
+# Ad-hoc codesign sau build
 add_custom_command(TARGET ${APP_NAME} POST_BUILD
     COMMAND codesign --force --deep --sign - "$<TARGET_BUNDLE_DIR:${APP_NAME}>"
     COMMENT "Ad-hoc codesign VnKey.app"

@@ -1,35 +1,26 @@
 /*
  * vnkey-macos — Bộ gõ tiếng Việt cho macOS
- * Sử dụng Input Method Kit (IMKit) + vnkey-engine (Rust FFI)
+ * Sử dụng CGEventTap + vnkey-engine (Rust FFI)
+ *
+ * Kiến trúc: CGEventTap hook keyboard → vnkey-engine xử lý →
+ * CGEvent backspace + Unicode text output. Không dùng IMKit
+ * → không gạch chân, tab/autocomplete hoạt động bình thường.
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 #import <Cocoa/Cocoa.h>
-#import <InputMethodKit/InputMethodKit.h>
-
-IMKServer *gIMKServer = nil;
+#import "VnKeyAppDelegate.h"
 
 int main(int argc, const char *argv[]) {
     @autoreleasepool {
-        /* Khởi tạo NSApplication trước IMKServer */
         [NSApplication sharedApplication];
 
-        /* Tạo IMKServer với connection name khớp Info.plist */
-        NSString *connectionName = [[NSBundle mainBundle]
-            objectForInfoDictionaryKey:@"InputMethodConnectionName"];
-        gIMKServer = [[IMKServer alloc]
-            initWithName:connectionName
-        bundleIdentifier:[[NSBundle mainBundle] bundleIdentifier]];
+        VnKeyAppDelegate *delegate = [[VnKeyAppDelegate alloc] init];
+        [NSApp setDelegate:delegate];
 
-        if (!gIMKServer) {
-            NSLog(@"VnKey: Không thể tạo IMKServer");
-            return 1;
-        }
+        NSLog(@"VnKey: Khởi động (CGEventTap mode)");
 
-        NSLog(@"VnKey: Input method server khởi động (%@)", connectionName);
-
-        /* Chạy vòng lặp sự kiện */
         [NSApp run];
     }
     return 0;

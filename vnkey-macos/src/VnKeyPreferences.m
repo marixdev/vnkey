@@ -1,6 +1,9 @@
 /*
  * VnKeyPreferences — Cửa sổ cài đặt VnKey (code-based, không dùng nib)
  *
+ * CGEventTap mode: không còn tùy chọn preedit (gạch chân).
+ * Thêm nút cấp quyền Accessibility.
+ *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
@@ -13,7 +16,6 @@ static NSString *const kVnKeyModernStyle   = @"VnKeyModernStyle";
 static NSString *const kVnKeyAutoRestore   = @"VnKeyAutoRestore";
 static NSString *const kVnKeyEdeMode       = @"VnKeyEdeMode";
 static NSString *const kVnKeyMacroEnabled  = @"VnKeyMacroEnabled";
-static NSString *const kVnKeyUsePreedit    = @"VnKeyUsePreedit";
 
 /* ==================== PreferencesController ==================== */
 
@@ -26,7 +28,6 @@ static NSString *const kVnKeyUsePreedit    = @"VnKeyUsePreedit";
 @property (nonatomic, strong) NSButton *autoRestoreBox;
 @property (nonatomic, strong) NSButton *edeModeBox;
 @property (nonatomic, strong) NSButton *macroEnabledBox;
-@property (nonatomic, strong) NSButton *usePreeditBox;
 
 - (void)setupInView:(NSView *)contentView;
 
@@ -133,18 +134,14 @@ static NSString *const kVnKeyUsePreedit    = @"VnKeyUsePreedit";
                                      : NSControlStateValueOff;
     self.macroEnabledBox.tag = 6;
     [contentView addSubview:self.macroEnabledBox];
-    y -= 28;
+    y -= 36;
 
-    /* Dùng preedit (gạch chân) */
-    self.usePreeditBox = [NSButton checkboxWithTitle:@"Gạch chân khi gõ (preedit)"
-                                              target:self
-                                              action:@selector(optionChanged:)];
-    self.usePreeditBox.frame = NSMakeRect(leftMargin, y, width, 20);
-    self.usePreeditBox.state = [defaults boolForKey:kVnKeyUsePreedit]
-                                   ? NSControlStateValueOn
-                                   : NSControlStateValueOff;
-    self.usePreeditBox.tag = 7;
-    [contentView addSubview:self.usePreeditBox];
+    /* Nút cấp quyền Accessibility */
+    NSButton *accessBtn = [NSButton buttonWithTitle:@"Cấp quyền Accessibility..."
+                                             target:self
+                                             action:@selector(openAccessibilitySettings:)];
+    accessBtn.frame = NSMakeRect(leftMargin, y, 220, 30);
+    [contentView addSubview:accessBtn];
     y -= 40;
 
     /* Phiên bản */
@@ -176,9 +173,14 @@ static NSString *const kVnKeyUsePreedit    = @"VnKeyUsePreedit";
         case 4: [defaults setBool:val forKey:kVnKeyAutoRestore]; break;
         case 5: [defaults setBool:val forKey:kVnKeyEdeMode]; break;
         case 6: [defaults setBool:val forKey:kVnKeyMacroEnabled]; break;
-        case 7: [defaults setBool:val forKey:kVnKeyUsePreedit]; break;
     }
     [self notifyChange];
+}
+
+- (void)openAccessibilitySettings:(id)sender {
+    NSURL *url = [NSURL URLWithString:
+        @"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"];
+    [[NSWorkspace sharedWorkspace] openURL:url];
 }
 
 - (void)notifyChange {
@@ -195,7 +197,7 @@ static NSString *const kVnKeyUsePreedit    = @"VnKeyUsePreedit";
 static VnKeyPreferencesController *sPrefsController = nil;
 
 NSWindow *createPreferencesWindow(void) {
-    NSRect frame = NSMakeRect(0, 0, 400, 380);
+    NSRect frame = NSMakeRect(0, 0, 400, 400);
     NSWindow *window = [[NSWindow alloc]
         initWithContentRect:frame
                   styleMask:(NSWindowStyleMaskTitled |

@@ -30,30 +30,9 @@
     <key>CFBundleIconFile</key>
     <string>VnKey</string>
 
-    <key>LSBackgroundOnly</key>
-    <true/>
-
+    <!-- Background app with status bar icon (NSStatusItem) -->
     <key>LSUIElement</key>
     <true/>
-
-    <!-- Input Method Kit configuration -->
-    <key>InputMethodConnectionName</key>
-    <string>VnKey_Connection</string>
-
-    <key>InputMethodServerControllerClass</key>
-    <string>VnKeyInputController</string>
-
-    <key>InputMethodServerDelegateClass</key>
-    <string>VnKeyAppDelegate</string>
-
-    <key>tsInputMethodCharacterRepertoireKey</key>
-    <array>
-        <string>Latn</string>
-        <string>Vitn</string>
-    </array>
-
-    <key>tsInputMethodIconFileKey</key>
-    <string>VnKey</string>
 
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
