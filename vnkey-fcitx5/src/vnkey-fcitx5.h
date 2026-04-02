@@ -51,6 +51,7 @@ public:
     bool spellCheck() const { return spellCheck_; }
     bool freeMarking() const { return freeMarking_; }
     bool modernStyle() const { return modernStyle_; }
+    bool edeMode() const { return edeMode_; }
 
 private:
     void setupMenu();
@@ -59,6 +60,7 @@ private:
     void updateSpellAction(InputContext *ic);
     void updateFreeAction(InputContext *ic);
     void updateModernAction(InputContext *ic);
+    void updateEdeAction(InputContext *ic);
     void updateClipLabels();
     void updateUI(InputContext *ic);
     void convertClipboard(bool toUnicode);
@@ -75,6 +77,7 @@ private:
     bool spellCheck_ = true;
     bool freeMarking_ = true;
     bool modernStyle_ = true;
+    bool edeMode_ = false;
     unsigned settingsGen_ = 0;
 
     /* Menu khay — giống fcitx5-unikey: mỗi nhóm một Action + Menu riêng */
@@ -89,6 +92,7 @@ private:
     std::unique_ptr<SimpleAction> spellAction_;
     std::unique_ptr<SimpleAction> freeAction_;
     std::unique_ptr<SimpleAction> modernAction_;
+    std::unique_ptr<SimpleAction> edeAction_;
     std::unique_ptr<SimpleAction> clipToUniAction_;
     std::unique_ptr<SimpleAction> clipFromUniAction_;
 };
@@ -108,11 +112,14 @@ private:
     void commitPreedit(bool soft = false);
     void directCommit(const char *utf8, size_t len);
     void trySurroundingContext();
+    void updatePreeditDisplay();
+    static bool isTerminalProgram(const std::string &prog);
 
     VnKeyEngine *engine_;
     InputContext *ic_;
     ::VnKeyEngine *vnkeyEngine_;
     bool vietMode_ = true;
+    bool isTerminal_ = false;
     std::string preedit_;
     int lastIM_ = -1;
     int lastCS_ = -1;

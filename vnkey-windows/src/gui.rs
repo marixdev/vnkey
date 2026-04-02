@@ -102,7 +102,7 @@ fn relaunch_normal() {
 // ── HTML ─────────────────────────────────────────────────────────────────────
 
 fn build_html(im: i32, cs: i32, spell: bool, free: bool, modern: bool,
-              auto_start: bool, run_admin: bool) -> String {
+              ede: bool, auto_start: bool, run_admin: bool) -> String {
     let cs_idx = cs_index(cs);
     let cs_names = ["Unicode","UTF-8","NCR Decimal","NCR Hex","CP-1258",
         "VIQR","TCVN3 (ABC)","VPS","VISCII","VNU","VNI Windows","VNI Mac"];
@@ -148,6 +148,7 @@ fn build_html(im: i32, cs: i32, spell: bool, free: bool, modern: bool,
           <label class="cb-item"><input type="checkbox" {spell} onchange="cmd({{cmd:'spell',v:this.checked}})">Kiểm tra chính tả</label>
           <label class="cb-item"><input type="checkbox" {free} onchange="cmd({{cmd:'free',v:this.checked}})">Bỏ dấu tự do</label>
           <label class="cb-item"><input type="checkbox" {modern} onchange="cmd({{cmd:'modern',v:this.checked}})">Kiểu mới (oà, uý)</label>
+          <label class="cb-item"><input type="checkbox" {ede} onchange="cmd({{cmd:'ede',v:this.checked}})">Tiếng Tây Nguyên (Êđê)</label>
           <label class="cb-item"><input type="checkbox" {autostart} onchange="cmd({{cmd:'autostart',v:this.checked}})">Khởi động cùng Windows</label>
           <label class="cb-item"><input type="checkbox" {admin} onchange="cmd({{cmd:'admin',v:this.checked}})">Chạy với quyền Admin</label>
         </div>
@@ -168,7 +169,7 @@ fn build_html(im: i32, cs: i32, spell: bool, free: bool, modern: bool,
 "##,
         ver = VERSION,
         spell = ck(spell), free = ck(free), modern = ck(modern),
-        autostart = ck(auto_start), admin = ck(run_admin),
+        ede = ck(ede), autostart = ck(auto_start), admin = ck(run_admin),
     );
 
     webview::html(&body, "")
@@ -217,6 +218,13 @@ fn handle_ipc(body: &str, proxy: tao::event_loop::EventLoopProxy<UiEvent>) {
             }
             crate::config::save();
         }
+        "ede" => {
+            let v = msg["v"].as_bool().unwrap_or(false);
+            if let Ok(mut g) = ENGINE.lock() {
+                if let Some(s) = g.as_mut() { s.ede_mode = v; s.sync_options(); }
+            }
+            crate::config::save();
+        }
         "autostart" => { set_auto_start(msg["v"].as_bool().unwrap_or(false)); }
         "admin" => {
             let v = msg["v"].as_bool().unwrap_or(false);
@@ -246,15 +254,15 @@ fn handle_ipc(body: &str, proxy: tao::event_loop::EventLoopProxy<UiEvent>) {
 }
 
 fn run_config() {
-    let (im, cs, spell, free, modern) = {
+    let (im, cs, spell, free, modern, ede) = {
         let g = ENGINE.lock().unwrap_or_else(|e| e.into_inner());
         match g.as_ref() {
-            Some(s) => (s.input_method, s.output_charset, s.spell_check, s.free_marking, s.modern_style),
-            None => (0, 1, true, true, true),
+            Some(s) => (s.input_method, s.output_charset, s.spell_check, s.free_marking, s.modern_style, s.ede_mode),
+            None => (0, 1, true, true, true, false),
         }
     };
     let auto_start = is_auto_start_enabled();
     let run_admin = crate::tray::get_run_as_admin();
-    let html = build_html(im, cs, spell, free, modern, auto_start, run_admin);
+    let html = build_html(im, cs, spell, free, modern, ede, auto_start, run_admin);
     webview::run_webview(&format!("VnKey {VERSION}"), 560.0, 330.0, &html, handle_ipc);
 }

@@ -143,12 +143,14 @@ pub extern "C" fn vnkey_set_options(
     modern_style: i32,
     spell_check: i32,
     auto_restore: i32,
+    ede_mode: i32,
 ) {
     with_engine(|engine| {
         engine.options.free_marking = free_marking != 0;
         engine.options.modern_style = modern_style != 0;
         engine.options.spell_check_enabled = spell_check != 0;
         engine.options.auto_non_vn_restore = auto_restore != 0;
+        engine.options.ede_mode = ede_mode != 0;
     });
 }
 
@@ -357,6 +359,7 @@ pub unsafe extern "C" fn vnkey_engine_set_options(
     modern_style: i32,
     spell_check: i32,
     auto_restore: i32,
+    ede_mode: i32,
 ) {
     if engine.is_null() {
         return;
@@ -366,6 +369,7 @@ pub unsafe extern "C" fn vnkey_engine_set_options(
     e.options.modern_style = modern_style != 0;
     e.options.spell_check_enabled = spell_check != 0;
     e.options.auto_non_vn_restore = auto_restore != 0;
+    e.options.ede_mode = ede_mode != 0;
 }
 
 /// Kiểm tra engine đang ở đầu từ.

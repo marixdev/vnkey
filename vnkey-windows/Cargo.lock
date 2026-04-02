@@ -2200,14 +2200,14 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vnkey-engine"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "once_cell",
 ]
 
 [[package]]
 name = "vnkey-windows"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "embed-resource",
  "serde",

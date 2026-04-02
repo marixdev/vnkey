@@ -19,6 +19,7 @@ static NSString *const kVnKeySpellCheck    = @"VnKeySpellCheck";
 static NSString *const kVnKeyFreeMarking   = @"VnKeyFreeMarking";
 static NSString *const kVnKeyModernStyle   = @"VnKeyModernStyle";
 static NSString *const kVnKeyAutoRestore   = @"VnKeyAutoRestore";
+static NSString *const kVnKeyEdeMode       = @"VnKeyEdeMode";
 
 /* ==================== Helpers ==================== */
 
@@ -34,6 +35,7 @@ static void loadPreferences(void *engine, BOOL *outVietMode) {
         kVnKeyFreeMarking: @YES,
         kVnKeyModernStyle: @YES,
         kVnKeyAutoRestore: @YES,
+        kVnKeyEdeMode:     @NO,
     };
     [defaults registerDefaults:defaultValues];
 
@@ -43,11 +45,12 @@ static void loadPreferences(void *engine, BOOL *outVietMode) {
     BOOL free = [defaults boolForKey:kVnKeyFreeMarking];
     BOOL modern = [defaults boolForKey:kVnKeyModernStyle];
     BOOL autoRestore = [defaults boolForKey:kVnKeyAutoRestore];
+    BOOL ede = [defaults boolForKey:kVnKeyEdeMode];
 
     vnkey_engine_set_input_method(engine, im);
     vnkey_engine_set_viet_mode(engine, viet ? 1 : 0);
     vnkey_engine_set_options(engine, free ? 1 : 0, modern ? 1 : 0,
-                            spell ? 1 : 0, autoRestore ? 1 : 0);
+                            spell ? 1 : 0, autoRestore ? 1 : 0, ede ? 1 : 0);
     if (outVietMode) *outVietMode = viet;
 }
 

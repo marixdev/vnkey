@@ -23,6 +23,7 @@ pub struct Options {
     pub spell_check_enabled: bool,
     pub auto_non_vn_restore: bool,
     pub strict_spell_check: bool,
+    pub ede_mode: bool,
 }
 
 impl Default for Options {
@@ -34,6 +35,7 @@ impl Default for Options {
             spell_check_enabled: true,
             auto_non_vn_restore: true,
             strict_spell_check: false,
+            ede_mode: false,
         }
     }
 }

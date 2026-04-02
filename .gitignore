@@ -18,3 +18,8 @@ Thumbs.db
 # Packages (build artifacts)
 *.deb
 *.rpm
+
+# Old VnKey decompiled binaries
+VNKEY/
+uvconv/
+x-unikey-1.0.4/

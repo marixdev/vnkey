@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.0.3 — 2026-04-02
+
+### vnkey-engine
+- Thêm hỗ trợ **tiếng Tây Nguyên** (Êđê, Jarai, M'Nông, K'Ho, Xê đăng, Sán chỉ): tùy chọn `ede_mode` trong engine
+  - Telex: `aaw`→ẁ, `eew`→ẅ, `oow`→ö, `oww`→ő, `uww`→ů, `cw`→č, `ew`→ĕ, `iw`→ĭ, `oz`→ŏ, `uz`→ŭ, `nx`→ñ, `b9`/`bb`→ẃ
+  - VNI: `a68`→ẁ, `e68`→ẅ, `o68`→ö, `o78`→ő, `u78`→ů, `c8`→č, `e8`→ĕ, `i8`→ĭ, `o8`→ŏ, `u8`→ŭ, `n4`→ñ, `b9`→ẃ
+  - 12 cặp ký tự (24 tổng cộng), hỗ trợ hoa/thường
+  - Tham khảo: VnKey cũ của Trần Thanh Bình (VietSID)
+- Thêm `ede_mode: bool` vào `Options` struct
+- Cập nhật FFI: `vnkey_set_options` và `vnkey_engine_set_options` thêm tham số `ede_mode`
+
+### vnkey-windows
+- Thêm checkbox "Tiếng Tây Nguyên (Êđê)" trong cửa sổ cấu hình
+- Lưu/nạp `ede_mode` trong config.json
+
+### vnkey-fcitx5
+- Thêm toggle "Tây Nguyên – Êđê" trong menu tray
+- Lưu/nạp `ede_mode` trong config JSON
+- **Sửa lỗi gõ tiếng Việt trên ứng dụng terminal** (Claude Code, vim trong terminal, v.v.): tự động phát hiện ứng dụng terminal và chuyển sang chế độ preedit (commit nguyên tử) thay vì deleteSurroundingText + commitString riêng biệt
+  - Tham khảo: manhit96/claude-code-vietnamese-fix (tác giả: manhit96, credits: PHTV)
+
+### vnkey-ibus
+- Thêm toggle "Tây Nguyên – Êđê" trong menu tray
+- Lưu/nạp `ede_mode` trong config JSON
+- **Sửa lỗi gõ tiếng Việt trên ứng dụng terminal**: phát hiện terminal và dùng preedit mode (giống Fcitx5)
+
+### vnkey-macos
+- Thêm tùy chọn `VnKeyEdeMode` trong Preferences
+- Cập nhật C header cho `vnkey_engine_set_options` (thêm `ede_mode`)
+
+---
+
 ## 1.0.2 — 2026-04-01
 
 ### vnkey-engine

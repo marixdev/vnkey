@@ -51,7 +51,8 @@ void vnkey_engine_set_viet_mode(VnKeyEngine *engine, int enabled);
 /* Đặt tùy chọn engine */
 void vnkey_engine_set_options(VnKeyEngine *engine,
                              int free_marking, int modern_style,
-                             int spell_check, int auto_restore);
+                             int spell_check, int auto_restore,
+                             int ede_mode);
 
 /* Trả 1 nếu ở đầu từ */
 int vnkey_engine_at_word_beginning(VnKeyEngine *engine);

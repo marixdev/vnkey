@@ -405,6 +405,13 @@ impl Engine {
     }
 
     fn dispatch_event(&mut self, ev: KeyEvent) -> bool {
+        // Thử xử lý Ede trước khi xử lý tiếng Việt thông thường
+        if self.options.ede_mode && self.viet_key {
+            if let Some(result) = self.try_ede(&ev) {
+                return result;
+            }
+        }
+
         match ev.ev_type {
             KeyEvType::RoofAll | KeyEvType::RoofA | KeyEvType::RoofE | KeyEvType::RoofO => {
                 self.process_roof(ev)
@@ -1673,6 +1680,119 @@ impl Engine {
 
     pub fn set_single_mode(&mut self) {
         self.single_mode = true;
+    }
+
+    // ============= Xử lý Ede (Tây Nguyên) =============
+
+    /// Thử xử lý ký tự Ede. Trả Some(true) nếu xử lý thành công,
+    /// Some(false) nếu cần pass-through, None nếu không phải Ede → chuyển sang xử lý thường.
+    fn try_ede(&mut self, ev: &KeyEvent) -> Option<bool> {
+        if self.current < 0 {
+            return None;
+        }
+
+        let sym = self.buf(self.current).vn_sym.to_lower();
+        let caps = self.buf(self.current).caps;
+        let form = self.buf(self.current).form;
+
+        match ev.ev_type {
+            // Bowl (VNI phím 8) hoặc TelexW (Telex phím w) — thêm dấu ngắn Ede
+            KeyEvType::Bowl | KeyEvType::TelexW | KeyEvType::HookAll => {
+                // Chỉ xử lý Bowl/TelexW/HookAll cho Ede
+                let is_bowl = ev.ev_type == KeyEvType::Bowl;
+                let is_telex_w = ev.ev_type == KeyEvType::TelexW || ev.ev_type == KeyEvType::HookAll;
+
+                // Nguyên âm có mũ (roof) → thêm breve: â→ẁ, ê→ẅ, ô→ö
+                if self.buf(self.current).v_offset >= 0 && (is_bowl || is_telex_w) {
+                    let ede_char = match sym {
+                        // â + breve → ẁ
+                        VnLexiName::ar => Some(if caps { '\u{1E80}' } else { '\u{1E81}' }),
+                        // ê + breve → ẅ
+                        VnLexiName::er => Some(if caps { '\u{1E84}' } else { '\u{1E85}' }),
+                        // ô + breve → ö
+                        VnLexiName::or => Some(if caps { '\u{00D6}' } else { '\u{00F6}' }),
+                        // ơ + breve → ő
+                        VnLexiName::oh => Some(if caps { '\u{0150}' } else { '\u{0151}' }),
+                        // ư + breve → ů
+                        VnLexiName::uh => Some(if caps { '\u{016E}' } else { '\u{016F}' }),
+                        // e + breve → ĕ (Telex: ew, VNI: e8)
+                        VnLexiName::e => Some(if caps { '\u{0114}' } else { '\u{0115}' }),
+                        // i + breve → ĭ (Telex: iw, VNI: i8)
+                        VnLexiName::i => Some(if caps { '\u{012C}' } else { '\u{012D}' }),
+                        _ => None,
+                    };
+
+                    if let Some(ch) = ede_char {
+                        return Some(self.emit_ede_char(ch));
+                    }
+                }
+
+                // Phụ âm c + bowl/w → č
+                if (form == WordForm::C || form == WordForm::NonVn)
+                    && sym == VnLexiName::c
+                    && (is_bowl || is_telex_w)
+                {
+                    let ch = if caps { '\u{010C}' } else { '\u{010D}' };
+                    return Some(self.emit_ede_char(ch));
+                }
+
+                // Không khớp → chuyển sang xử lý thường
+                None
+            }
+
+            // Tone0 (VNI phím 0, Telex phím z) — ŏ, ŭ
+            KeyEvType::Tone0 => {
+                if self.buf(self.current).v_offset >= 0 && self.buf(self.current).tone == 0 {
+                    let ede_char = match sym {
+                        // o + z → ŏ
+                        VnLexiName::o => Some(if caps { '\u{014E}' } else { '\u{014F}' }),
+                        // u + z → ŭ
+                        VnLexiName::u => Some(if caps { '\u{016C}' } else { '\u{016D}' }),
+                        _ => None,
+                    };
+
+                    if let Some(ch) = ede_char {
+                        return Some(self.emit_ede_char(ch));
+                    }
+                }
+                None
+            }
+
+            // Tone4 (VNI phím 4, Telex phím x) — ñ
+            KeyEvType::Tone4 => {
+                if (form == WordForm::C || form == WordForm::NonVn) && sym == VnLexiName::n {
+                    let ch = if caps { '\u{00D1}' } else { '\u{00F1}' };
+                    return Some(self.emit_ede_char(ch));
+                }
+                None
+            }
+
+            // Dd (VNI phím 9, Telex phím d) — ẃ (trên b)
+            KeyEvType::Dd => {
+                if (form == WordForm::C || form == WordForm::NonVn) && sym == VnLexiName::b {
+                    let ch = if caps { '\u{1E82}' } else { '\u{1E83}' };
+                    return Some(self.emit_ede_char(ch));
+                }
+                None
+            }
+
+            _ => None,
+        }
+    }
+
+    /// Thay ký tự hiện tại bằng ký tự Ede Unicode.
+    /// Chuyển buffer entry thành NonVnChar với mã Unicode Ede.
+    fn emit_ede_char(&mut self, ch: char) -> bool {
+        self.mark_change(self.current);
+        let idx = self.current as usize;
+        self.buffer[idx].form = WordForm::NonVn;
+        self.buffer[idx].vn_sym = VnLexiName::NonVnChar;
+        self.buffer[idx].key_code = ch as u32;
+        self.buffer[idx].tone = 0;
+        self.buffer[idx].v_offset = -1;
+        self.buffer[idx].c1_offset = -1;
+        self.buffer[idx].c2_offset = -1;
+        true
     }
 }
 

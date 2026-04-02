@@ -58,6 +58,7 @@ pub struct EngineState {
     pub spell_check: bool,
     pub free_marking: bool,
     pub modern_style: bool,
+    pub ede_mode: bool,
 }
 
 impl EngineState {
@@ -72,6 +73,7 @@ impl EngineState {
             auto_non_vn_restore: true,
             macro_enabled: false,
             strict_spell_check: false,
+            ede_mode: false,
         };
 
         Self {
@@ -82,6 +84,7 @@ impl EngineState {
             spell_check: true,
             free_marking: true,
             modern_style: true,
+            ede_mode: false,
         }
     }
 
@@ -108,6 +111,7 @@ impl EngineState {
         self.engine.options.free_marking = self.free_marking;
         self.engine.options.modern_style = self.modern_style;
         self.engine.options.spell_check_enabled = self.spell_check;
+        self.engine.options.ede_mode = self.ede_mode;
     }
 }
 

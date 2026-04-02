@@ -52,6 +52,9 @@ pub fn load() {
             if let Some(v) = get_bool(&vals, "modern_style") {
                 state.modern_style = v;
             }
+            if let Some(v) = get_bool(&vals, "ede_mode") {
+                state.ede_mode = v;
+            }
             state.sync_options();
         }
     }
@@ -194,7 +197,7 @@ fn do_save() {
     };
 
     // Đọc trạng thái engine hiện tại
-    let (im, cs, vm, spell, free, modern) = {
+    let (im, cs, vm, spell, free, modern, ede) = {
         match crate::ENGINE.lock() {
             Ok(guard) => match guard.as_ref() {
                 Some(s) => (
@@ -204,6 +207,7 @@ fn do_save() {
                     s.spell_check,
                     s.free_marking,
                     s.modern_style,
+                    s.ede_mode,
                 ),
                 None => return,
             },
@@ -267,6 +271,7 @@ fn do_save() {
          \x20 \"spell_check\": {spell},\n\
          \x20 \"free_marking\": {free},\n\
          \x20 \"modern_style\": {modern},\n\
+         \x20 \"ede_mode\": {ede},\n\
          \x20 \"run_as_admin\": {run_as_admin},\n\
          \x20 \"conv_from\": {conv_from},\n\
          \x20 \"conv_to\": {conv_to},\n\

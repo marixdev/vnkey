@@ -61,6 +61,7 @@ typedef struct {
     int  spell_check;
     int  free_marking;
     int  modern_style;
+    int  ede_mode;
 } VnKeyConfig;
 
 static VnKeyConfig g_config = {
@@ -69,6 +70,7 @@ static VnKeyConfig g_config = {
     .spell_check    = 1,
     .free_marking   = 1,
     .modern_style   = 1,
+    .ede_mode       = 0,
 };
 
 /* ==================== Lưu trữ cấu hình ==================== */
@@ -173,6 +175,7 @@ static void load_config(void) {
     g_config.spell_check    = json_get_bool(contents, "spell_check", 1);
     g_config.free_marking   = json_get_bool(contents, "free_marking", 1);
     g_config.modern_style   = json_get_bool(contents, "modern_style", 1);
+    g_config.ede_mode       = json_get_bool(contents, "ede_mode", 0);
 
     /* Nạp app_charsets */
     char *ac_json = json_get_object(contents, "app_charsets");
@@ -202,6 +205,7 @@ static void save_config(void) {
         "  \"spell_check\": %s,\n"
         "  \"free_marking\": %s,\n"
         "  \"modern_style\": %s,\n"
+        "  \"ede_mode\": %s,\n"
         "  \"app_charsets\": %s\n"
         "}\n",
         g_config.input_method,
@@ -209,6 +213,7 @@ static void save_config(void) {
         g_config.spell_check ? "true" : "false",
         g_config.free_marking ? "true" : "false",
         g_config.modern_style ? "true" : "false",
+        g_config.ede_mode ? "true" : "false",
         ac_str
     );
     g_file_set_contents(path, buf, -1, NULL);
@@ -407,6 +412,7 @@ struct _VnkIBusEngine {
     gchar preedit[4096];
     size_t preedit_len;   /* độ dài byte */
     gboolean viet_mode;
+    gboolean is_terminal;
 };
 
 struct _VnkIBusEngineClass {
@@ -456,7 +462,8 @@ static void sync_settings(VnkIBusEngine *self) {
         g_config.free_marking,
         g_config.modern_style,
         g_config.spell_check,
-        1 /* auto_restore */);
+        1 /* auto_restore */,
+        g_config.ede_mode);
 }
 
 static void clear_preedit(VnkIBusEngine *self) {
@@ -465,7 +472,17 @@ static void clear_preedit(VnkIBusEngine *self) {
 }
 
 static void update_preedit_display(VnkIBusEngine *self) {
-    (void)self; /* không dùng preedit, commit trực tiếp */
+    IBusEngine *engine = IBUS_ENGINE(self);
+    if (!self->is_terminal) return; /* Chỉ hiển thị preedit cho terminal */
+    if (self->preedit_len == 0) {
+        ibus_engine_hide_preedit_text(engine);
+        return;
+    }
+    IBusText *text = ibus_text_new_from_string(self->preedit);
+    ibus_text_append_attribute(text, IBUS_ATTR_TYPE_UNDERLINE,
+                               IBUS_ATTR_UNDERLINE_SINGLE, 0,
+                               g_utf8_strlen(self->preedit, -1));
+    ibus_engine_update_preedit_text(engine, text, g_utf8_strlen(self->preedit, -1), TRUE);
 }
 
 /* Xóa n ký tự UTF-8 từ cuối preedit */
@@ -641,6 +658,15 @@ static IBusPropList *build_prop_list(void) {
         NULL);
     ibus_prop_list_append(props, modern_prop);
 
+    IBusText *ede_label = ibus_text_new_from_string(
+        "T\xc3\xa2y Nguy\xc3\xaan \xe2\x80\x93 \xc3\x8a\xc4\x91\xc3\xaa");
+    IBusProperty *ede_prop = ibus_property_new(
+        "opt-ede", PROP_TYPE_TOGGLE, ede_label, NULL, NULL,
+        TRUE, TRUE,
+        g_config.ede_mode ? PROP_STATE_CHECKED : PROP_STATE_UNCHECKED,
+        NULL);
+    ibus_prop_list_append(props, ede_prop);
+
     /* Thao tác chuyển mã clipboard */
     const char *cs_name = "Unicode (UTF-8)";
     for (int i = 0; i < CS_COUNT; i++) {
@@ -698,6 +724,7 @@ static void register_properties(VnkIBusEngine *self) {
 static void vnk_ibus_engine_init(VnkIBusEngine *self) {
     self->engine = vnkey_engine_new();
     self->viet_mode = TRUE;
+    self->is_terminal = FALSE;
     clear_preedit(self);
     sync_settings(self);
     g_message("vnkey: engine init, engine=%p, viet_mode=%d, im=%d",
@@ -733,14 +760,33 @@ static void vnk_ibus_engine_disable(IBusEngine *engine) {
     parent_class->disable(engine);
 }
 
+static gboolean is_terminal_program(const char *name) {
+    if (!name) return FALSE;
+    static const char *terminals[] = {
+        "alacritty", "kitty", "foot", "gnome-terminal-server",
+        "konsole", "xterm", "urxvt", "wezterm-gui", "wezterm",
+        "st", "terminator", "tilix", "xfce4-terminal", "mate-terminal",
+        "lxterminal", "sakura", "terminology", "cool-retro-term",
+        "deepin-terminal", "qterminal", "guake", "yakuake",
+        "hyper", "tabby", "rio", "ghostty", "contour",
+        NULL
+    };
+    for (const char **t = terminals; *t; t++) {
+        if (strcasecmp(name, *t) == 0) return TRUE;
+    }
+    return FALSE;
+}
+
 static void vnk_ibus_engine_focus_in(IBusEngine *engine) {
     VnkIBusEngine *self = (VnkIBusEngine *)engine;
     sync_settings(self);
     register_properties(self);
 
-    /* Cập nhật charset override theo app đang focus */
+    /* Cập nhật charset override và phát hiện terminal */
     char *exe = get_focused_exe_name();
     vnkey_app_charset_update(exe);
+    self->is_terminal = is_terminal_program(exe);
+    g_message("vnkey: focus_in app=%s terminal=%d", exe ? exe : "(null)", self->is_terminal);
     g_free(exe);
 
     parent_class->focus_in(engine);
@@ -798,6 +844,11 @@ static void vnk_ibus_engine_property_activate(IBusEngine *engine,
     }
     else if (strcmp(prop_name, "opt-modern") == 0) {
         g_config.modern_style = !g_config.modern_style;
+        sync_settings(self);
+        save_config();
+    }
+    else if (strcmp(prop_name, "opt-ede") == 0) {
+        g_config.ede_mode = !g_config.ede_mode;
         sync_settings(self);
         save_config();
     }
@@ -902,8 +953,33 @@ static gboolean vnk_ibus_engine_process_key_event(IBusEngine *engine,
         return FALSE;
     }
 
-    /* Xử lý Backspace — chế độ commit trực tiếp */
+    /* Xử lý Backspace */
     if (keyval == IBUS_KEY_BackSpace) {
+        if (self->is_terminal) {
+            /* Chế độ preedit cho terminal */
+            if (self->preedit_len == 0)
+                return FALSE; /* không có gì, để app xử lý */
+
+            uint8_t buf[256];
+            size_t actual_len = 0;
+            size_t backspaces = 0;
+            int processed = vnkey_engine_backspace(
+                self->engine, buf, sizeof(buf), &actual_len, &backspaces, NULL);
+
+            if (processed && (backspaces > 0 || actual_len > 0)) {
+                preedit_remove_chars(self, backspaces);
+                if (actual_len > 0)
+                    preedit_append(self, buf, actual_len);
+                update_preedit_display(self);
+                return TRUE;
+            }
+            /* Xóa 1 ký tự UTF-8 cuối */
+            preedit_remove_chars(self, 1);
+            update_preedit_display(self);
+            return TRUE;
+        }
+
+        /* Chế độ commit trực tiếp (ứng dụng GUI) */
         uint8_t buf[256];
         size_t actual_len = 0;
         size_t backspaces = 0;
@@ -911,55 +987,67 @@ static gboolean vnk_ibus_engine_process_key_event(IBusEngine *engine,
             self->engine, buf, sizeof(buf), &actual_len, &backspaces, NULL);
 
         if (processed && (backspaces > 0 || actual_len > 0)) {
-            /* Xóa ký tự đã commit */
             if (backspaces > 0) {
                 ibus_engine_delete_surrounding_text(
                     IBUS_ENGINE(self), -(gint)backspaces, (guint)backspaces);
             }
-            /* Commit đầu ra mới */
             if (actual_len > 0) {
                 direct_commit(self, (const char *)buf, actual_len);
             }
             return TRUE;
         }
-
-        /* Engine không xử lý: cho app xử lý backspace */
         return FALSE;
     }
 
-    /* Phím ASCII in được — commit trực tiếp (không preedit/gạch chân) */
+    /* Phím ASCII in được */
     if (keyval >= IBUS_KEY_exclam && keyval <= IBUS_KEY_asciitilde) {
-        /* Nếu preedit rỗng, thử đọc surrounding text để khôi phục ngữ cảnh */
-        try_surrounding_context(self);
-
         uint8_t buf[256];
         size_t actual_len = 0;
         size_t backspaces = 0;
+
+        if (!self->is_terminal) {
+            try_surrounding_context(self);
+        }
 
         int processed = vnkey_engine_process(
             self->engine, (uint32_t)keyval,
             buf, sizeof(buf), &actual_len, &backspaces, NULL);
 
-        g_message("vnkey: key '%c' (0x%x) -> processed=%d bs=%zu out=%zu",
-                  (char)keyval, keyval, processed, backspaces, actual_len);
+        g_message("vnkey: key '%c' (0x%x) -> processed=%d bs=%zu out=%zu terminal=%d",
+                  (char)keyval, keyval, processed, backspaces, actual_len, self->is_terminal);
 
+        if (self->is_terminal) {
+            /* Chế độ preedit cho terminal */
+            if (processed) {
+                preedit_remove_chars(self, backspaces);
+                if (actual_len > 0)
+                    preedit_append(self, buf, actual_len);
+            } else {
+                uint8_t ch = (uint8_t)keyval;
+                preedit_append(self, &ch, 1);
+            }
+            if (vnkey_engine_at_word_beginning(self->engine)) {
+                commit_preedit(self);
+            } else {
+                update_preedit_display(self);
+            }
+            return TRUE;
+        }
+
+        /* Chế độ commit trực tiếp (ứng dụng GUI) */
         if (processed) {
-            /* Xóa ký tự đã commit bằng delete_surrounding_text */
             if (backspaces > 0) {
                 ibus_engine_delete_surrounding_text(
                     IBUS_ENGINE(self), -(gint)backspaces, (guint)backspaces);
             }
-            /* Commit đầu ra mới */
             if (actual_len > 0) {
                 direct_commit(self, (const char *)buf, actual_len);
             }
         } else {
-            /* Engine không xử lý: commit ký tự thô */
             char ch = (char)keyval;
             direct_commit(self, &ch, 1);
         }
 
-        /* Nếu engine ở ranh giới từ, reset */
         if (vnkey_engine_at_word_beginning(self->engine)) {
             vnkey_engine_reset(self->engine);
         }

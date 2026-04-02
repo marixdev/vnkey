@@ -118,6 +118,7 @@ void VnKeyEngine::loadConfig() {
     spellCheck_    = jsonGetBool(json, "spell_check", true);
     freeMarking_   = jsonGetBool(json, "free_marking", true);
     modernStyle_   = jsonGetBool(json, "modern_style", true);
+    edeMode_       = jsonGetBool(json, "ede_mode", false);
 
     /* Nạp app_charsets */
     auto acJson = jsonGetObject(json, "app_charsets");
@@ -144,6 +145,7 @@ void VnKeyEngine::saveConfig() {
       << "  \"spell_check\": " << (spellCheck_ ? "true" : "false") << ",\n"
       << "  \"free_marking\": " << (freeMarking_ ? "true" : "false") << ",\n"
       << "  \"modern_style\": " << (modernStyle_ ? "true" : "false") << ",\n"
+      << "  \"ede_mode\": " << (edeMode_ ? "true" : "false") << ",\n"
       << "  \"app_charsets\": " << acStr << "\n"
       << "}\n";
 }
@@ -300,6 +302,23 @@ void VnKeyEngine::setupMenu() {
         });
     uiManager.registerAction("vnkey-modern", modernAction_.get());
 
+    /* ---- Toggle: Ede mode ---- */
+    edeAction_ = std::make_unique<SimpleAction>();
+    edeAction_->setCheckable(true);
+    edeAction_->setChecked(edeMode_);
+    edeAction_->setShortText(edeMode_
+        ? "T\xc3\xa2y Nguy\xc3\xaan \xe2\x80\x93 \xc3\x8a\xc4\x91\xc3\xaa (ON)"
+        : "T\xc3\xa2y Nguy\xc3\xaan \xe2\x80\x93 \xc3\x8a\xc4\x91\xc3\xaa (OFF)");
+    edeAction_->connect<SimpleAction::Activated>(
+        [this](InputContext *ic) {
+            edeMode_ = !edeMode_;
+            updateEdeAction(ic);
+            settingsGen_++;
+            saveConfig();
+            syncActiveIC(ic);
+        });
+    uiManager.registerAction("vnkey-ede", edeAction_.get());
+
     /* ---- Clipboard conversion (non-checkable) ---- */
     clipToUniAction_ = std::make_unique<SimpleAction>();
     clipToUniAction_->setShortText("[CS] \xe2\x86\x92 Unicode (clipboard)");
@@ -386,6 +405,14 @@ void VnKeyEngine::updateModernAction(InputContext *ic) {
     modernAction_->update(ic);
 }
 
+void VnKeyEngine::updateEdeAction(InputContext *ic) {
+    edeAction_->setChecked(edeMode_);
+    edeAction_->setShortText(edeMode_
+        ? "T\xc3\xa2y Nguy\xc3\xaan \xe2\x80\x93 \xc3\x8a\xc4\x91\xc3\xaa (ON)"
+        : "T\xc3\xa2y Nguy\xc3\xaan \xe2\x80\x93 \xc3\x8a\xc4\x91\xc3\xaa (OFF)");
+    edeAction_->update(ic);
+}
+
 void VnKeyEngine::updateClipLabels() {
     const char *csName = "Unicode (UTF-8)";
     for (size_t i = 0; i < CS_COUNT; i++) {
@@ -406,6 +433,7 @@ void VnKeyEngine::updateUI(InputContext *ic) {
     updateSpellAction(ic);
     updateFreeAction(ic);
     updateModernAction(ic);
+    updateEdeAction(ic);
 }
 
 void VnKeyEngine::activate(const InputMethodEntry & /*entry*/,
@@ -417,6 +445,7 @@ void VnKeyEngine::activate(const InputMethodEntry & /*entry*/,
     sa.addAction(StatusGroup::InputMethod, spellAction_.get());
     sa.addAction(StatusGroup::InputMethod, freeAction_.get());
     sa.addAction(StatusGroup::InputMethod, modernAction_.get());
+    sa.addAction(StatusGroup::InputMethod, edeAction_.get());
     sa.addAction(StatusGroup::InputMethod, clipToUniAction_.get());
     sa.addAction(StatusGroup::InputMethod, clipFromUniAction_.get());
     updateUI(ic);
@@ -476,7 +505,8 @@ void VnKeyState::syncSettings() {
         engine_->freeMarking() ? 1 : 0,
         engine_->modernStyle() ? 1 : 0,
         engine_->spellCheck() ? 1 : 0,
-        1 /* auto_restore */);
+        1 /* auto_restore */,
+        engine_->edeMode() ? 1 : 0);
 }
 
 void VnKeyState::activate() {
@@ -485,8 +515,16 @@ void VnKeyState::activate() {
     syncSettings();
     vnkey_engine_reset(vnkeyEngine_);
     preedit_.clear();
-    fprintf(stderr, "[vnkey] activate: vietMode=1 engine=%p ic=%p\n",
-            (void*)vnkeyEngine_, (void*)ic_);
+
+    /* Phát hiện ứng dụng terminal để dùng preedit mode (atomic commit) */
+    isTerminal_ = false;
+    auto prog = ic_->program();
+    if (!prog.empty()) {
+        isTerminal_ = isTerminalProgram(prog);
+    }
+
+    fprintf(stderr, "[vnkey] activate: vietMode=1 engine=%p ic=%p terminal=%d prog=%s\n",
+            (void*)vnkeyEngine_, (void*)ic_, isTerminal_, prog.c_str());
 
     /* Cập nhật charset override theo app đang focus */
     auto prog = ic_->program();
@@ -741,6 +779,39 @@ void VnKeyState::directCommit(const char *utf8, size_t len) {
     }
 }
 
+bool VnKeyState::isTerminalProgram(const std::string &prog) {
+    /* Lấy basename và chuyển lowercase */
+    auto pos = prog.rfind('/');
+    std::string name = (pos != std::string::npos) ? prog.substr(pos + 1) : prog;
+    for (auto &c : name) c = std::tolower(static_cast<unsigned char>(c));
+
+    static const char *terminals[] = {
+        "alacritty", "kitty", "foot", "gnome-terminal-server",
+        "konsole", "xterm", "urxvt", "wezterm-gui", "wezterm",
+        "st", "terminator", "tilix", "xfce4-terminal", "mate-terminal",
+        "lxterminal", "sakura", "terminology", "cool-retro-term",
+        "deepin-terminal", "qterminal", "guake", "yakuake",
+        "hyper", "tabby", "rio", "ghostty", "contour",
+    };
+    for (const char *t : terminals) {
+        if (name == t) return true;
+    }
+    return false;
+}
+
+void VnKeyState::updatePreeditDisplay() {
+    if (preedit_.empty()) {
+        ic_->inputPanel().setClientPreedit(Text());
+        ic_->updatePreedit();
+        return;
+    }
+    Text preeditText;
+    preeditText.append(preedit_);
+    preeditText.setCursor(static_cast<int>(preedit_.size()));
+    ic_->inputPanel().setClientPreedit(preeditText);
+    ic_->updatePreedit();
+}
+
 void VnKeyState::trySurroundingContext() {
     /* Nếu engine đang ở đầu từ và preedit trống,
      * thử đọc surrounding text để khôi phục ngữ cảnh phụ âm đứng trước.
@@ -833,8 +904,49 @@ void VnKeyState::keyEvent(KeyEvent &keyEvent) {
         return; /* để Fcitx gửi dấu cách */
     }
 
-    /* Xử lý Backspace — chế độ commit trực tiếp */
+    /* Xử lý Backspace */
     if (key.check(FcitxKey_BackSpace)) {
+        if (isTerminal_) {
+            /* Chế độ preedit cho terminal: cập nhật preedit */
+            if (preedit_.empty()) {
+                return; /* không có gì để xóa, để hệ thống xử lý */
+            }
+            uint8_t buf[256];
+            size_t actualLen = 0;
+            size_t backspaces = 0;
+            int processed = vnkey_engine_backspace(
+                vnkeyEngine_, buf, sizeof(buf), &actualLen, &backspaces, nullptr);
+
+            if (processed && (backspaces > 0 || actualLen > 0)) {
+                /* Xóa ký tự trong preedit */
+                for (size_t i = 0; i < backspaces && !preedit_.empty(); i++) {
+                    /* Xóa 1 ký tự UTF-8 cuối */
+                    while (!preedit_.empty() &&
+                           (static_cast<unsigned char>(preedit_.back()) & 0xC0) == 0x80) {
+                        preedit_.pop_back();
+                    }
+                    if (!preedit_.empty()) preedit_.pop_back();
+                }
+                /* Thêm đầu ra mới */
+                if (actualLen > 0) {
+                    preedit_.append(reinterpret_cast<const char *>(buf), actualLen);
+                }
+                updatePreeditDisplay();
+                keyEvent.filterAndAccept();
+                return;
+            }
+            /* Xóa 1 ký tự UTF-8 cuối từ preedit */
+            while (!preedit_.empty() &&
+                   (static_cast<unsigned char>(preedit_.back()) & 0xC0) == 0x80) {
+                preedit_.pop_back();
+            }
+            if (!preedit_.empty()) preedit_.pop_back();
+            updatePreeditDisplay();
+            keyEvent.filterAndAccept();
+            return;
+        }
+
+        /* Chế độ commit trực tiếp (ứng dụng GUI) */
         uint8_t buf[256];
         size_t actualLen = 0;
         size_t backspaces = 0;
@@ -861,13 +973,9 @@ void VnKeyState::keyEvent(KeyEvent &keyEvent) {
         return;
     }
 
-    /* Phím ASCII in được  commit trực tiếp (không preedit/gạch chân) */
+    /* Phím ASCII in được */
     auto sym = key.sym();
     if (sym >= FcitxKey_exclam && sym <= FcitxKey_asciitilde) {
-        /* Không gọi trySurroundingContext() trong chế độ commit trực tiếp:
-         * Surrounding text chứa ký tự đã commit thô (ASCII) hoặc phần đuôi
-         * của từ tiếng Việt (ví dụ 'o' sau 'à'), nạp lại sẽ gộp hai từ
-         * thành một từ dài vô nghĩa → engine đánh dấu NonVn → mất dấu. */
         uint32_t keyCode = static_cast<uint32_t>(sym);
         uint8_t buf[256];
         size_t actualLen = 0;
@@ -876,6 +984,38 @@ void VnKeyState::keyEvent(KeyEvent &keyEvent) {
         int processed = vnkey_engine_process(
             vnkeyEngine_, keyCode, buf, sizeof(buf), &actualLen, &backspaces, nullptr);
 
+        if (isTerminal_) {
+            /* Chế độ preedit cho terminal: cập nhật preedit */
+            if (processed) {
+                /* Xóa backspaces ký tự UTF-8 cuối từ preedit */
+                for (size_t i = 0; i < backspaces && !preedit_.empty(); i++) {
+                    while (!preedit_.empty() &&
+                           (static_cast<unsigned char>(preedit_.back()) & 0xC0) == 0x80) {
+                        preedit_.pop_back();
+                    }
+                    if (!preedit_.empty()) preedit_.pop_back();
+                }
+                /* Thêm đầu ra mới */
+                if (actualLen > 0) {
+                    preedit_.append(reinterpret_cast<const char *>(buf), actualLen);
+                }
+            } else {
+                /* Engine không xử lý: thêm ký tự thô vào preedit */
+                preedit_ += static_cast<char>(keyCode);
+            }
+
+            /* Nếu engine ở ranh giới từ, commit preedit */
+            if (vnkey_engine_at_word_beginning(vnkeyEngine_)) {
+                commitPreedit();
+                vnkey_engine_reset(vnkeyEngine_);
+            } else {
+                updatePreeditDisplay();
+            }
+            keyEvent.filterAndAccept();
+            return;
+        }
+
+        /* Chế độ commit trực tiếp (ứng dụng GUI) */
         bool hasSurrounding = ic_->capabilityFlags().test(CapabilityFlag::SurroundingText);
         fprintf(stderr, "[vnkey] process: key=%c(0x%x) processed=%d bs=%zu len=%zu surrounding=%d\n",
                 (keyCode >= 0x20 && keyCode < 0x7f) ? (char)keyCode : '?',

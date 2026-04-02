@@ -1,6 +1,6 @@
 [package]
 name = "vnkey-windows"
-version = "1.0.2"
+version = "1.0.3"
 edition = "2021"
 description = "VnKey Vietnamese Input Method for Windows"
 license = "GPL-3.0-or-later"
