@@ -871,13 +871,18 @@ bool VnKeyState::isTerminalProgram(const std::string &prog) {
 void VnKeyState::updatePreeditDisplay() {
     if (preedit_.empty()) {
         ic_->inputPanel().setClientPreedit(Text());
+        ic_->inputPanel().setPreedit(Text());
         ic_->updatePreedit();
         return;
     }
     Text preeditText;
     preeditText.append(preedit_);
     preeditText.setCursor(static_cast<int>(preedit_.size()));
+    /* Ưu tiên client-side preedit (hiển thị ngay trong app);
+     * nếu app không hỗ trợ ClientPreedit (vd: Flatpak/Snap sandbox),
+     * dùng server-side preedit (hiển thị qua panel của Fcitx5). */
     ic_->inputPanel().setClientPreedit(preeditText);
+    ic_->inputPanel().setPreedit(preeditText);
     ic_->updatePreedit();
 }
 
@@ -975,7 +980,13 @@ void VnKeyState::keyEvent(KeyEvent &keyEvent) {
 
     /* Xử lý Backspace */
     if (key.check(FcitxKey_BackSpace)) {
-        if (isTerminal_) {
+        /* Flatpak/Snap sandbox app không hỗ trợ SurroundingText →
+         * không thể deleteSurroundingText → phải dùng preedit mode.
+         * Giống logic terminal: duy trì preedit buffer nội bộ. */
+        bool hasSurrounding = ic_->capabilityFlags().test(CapabilityFlag::SurroundingText);
+        bool usePreedit = isTerminal_ || !hasSurrounding;
+
+        if (usePreedit) {
             /* Chế độ preedit cho terminal: cập nhật preedit */
             if (preedit_.empty()) {
                 return; /* không có gì để xóa, để hệ thống xử lý */
@@ -1015,7 +1026,7 @@ void VnKeyState::keyEvent(KeyEvent &keyEvent) {
             return;
         }
 
-        /* Chế độ commit trực tiếp (ứng dụng GUI) */
+        /* Chế độ commit trực tiếp (ứng dụng GUI có SurroundingText) */
         uint8_t buf[256];
         size_t actualLen = 0;
         size_t backspaces = 0;
@@ -1024,8 +1035,7 @@ void VnKeyState::keyEvent(KeyEvent &keyEvent) {
 
         if (processed && (backspaces > 0 || actualLen > 0)) {
             /* Xóa ký tự đã commit */
-            if (backspaces > 0 &&
-                ic_->capabilityFlags().test(CapabilityFlag::SurroundingText)) {
+            if (backspaces > 0) {
                 ic_->deleteSurroundingText(
                     -static_cast<int>(backspaces),
                     static_cast<unsigned int>(backspaces));
@@ -1053,8 +1063,18 @@ void VnKeyState::keyEvent(KeyEvent &keyEvent) {
         int processed = vnkey_engine_process(
             vnkeyEngine_, keyCode, buf, sizeof(buf), &actualLen, &backspaces, nullptr);
 
-        if (isTerminal_) {
-            /* Chế độ preedit cho terminal: cập nhật preedit */
+        /* Flatpak/Snap sandbox app không hỗ trợ SurroundingText →
+         * không thể deleteSurroundingText để sửa ký tự đã commit.
+         * Phải dùng preedit mode: duy trì buffer nội bộ,
+         * chỉ commitString() khi hoàn thành từ.
+         * Điều này đảm bảo ký tự tiếng Việt được gửi nguyên vẹn,
+         * không bị nhân đôi như khi dùng direct commit
+         * mà không có capability SurroundingText. */
+        bool hasSurrounding = ic_->capabilityFlags().test(CapabilityFlag::SurroundingText);
+        bool usePreedit = isTerminal_ || !hasSurrounding;
+
+        if (usePreedit) {
+            /* Chế độ preedit cho terminal/sandbox: cập nhật preedit */
             if (processed) {
                 /* Xóa backspaces ký tự UTF-8 cuối từ preedit */
                 for (size_t i = 0; i < backspaces && !preedit_.empty(); i++) {
