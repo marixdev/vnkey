@@ -1104,8 +1104,8 @@ void VnKeyState::keyEvent(KeyEvent &keyEvent) {
             return;
         }
 
-        /* Chế độ commit trực tiếp (ứng dụng GUI) */
-        bool hasSurrounding = ic_->capabilityFlags().test(CapabilityFlag::SurroundingText);
+        /* Chế độ commit trực tiếp (ứng dụng GUI có SurroundingText) */
+        /* hasSurrounding đã khai báo ở trên (dòng 1073) */
         fprintf(stderr, "[vnkey] process: key=%c(0x%x) processed=%d bs=%zu len=%zu surrounding=%d\n",
                 (keyCode >= 0x20 && keyCode < 0x7f) ? (char)keyCode : '?',
                 keyCode, processed, backspaces, actualLen, hasSurrounding);
