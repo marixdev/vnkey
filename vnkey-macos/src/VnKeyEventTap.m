@@ -79,9 +79,10 @@ static void loadPreferencesIntoEngine(void) {
 
 /* Gửi n backspace qua CGEvent */
 static void sendBackspaces(CGEventTapProxy proxy, size_t count) {
+    CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStateCombinedSessionState);
     for (size_t i = 0; i < count; i++) {
-        CGEventRef down = CGEventCreateKeyboardEvent(NULL, kVK_Delete, true);
-        CGEventRef up   = CGEventCreateKeyboardEvent(NULL, kVK_Delete, false);
+        CGEventRef down = CGEventCreateKeyboardEvent(source, kVK_Delete, true);
+        CGEventRef up   = CGEventCreateKeyboardEvent(source, kVK_Delete, false);
         CGEventSetIntegerValueField(down, kCGEventSourceUserData, kVnKeyEventTag);
         CGEventSetIntegerValueField(up,   kCGEventSourceUserData, kVnKeyEventTag);
         CGEventTapPostEvent(proxy, down);
@@ -89,6 +90,7 @@ static void sendBackspaces(CGEventTapProxy proxy, size_t count) {
         CFRelease(down);
         CFRelease(up);
     }
+    if (source) CFRelease(source);
 }
 
 /* Gửi chuỗi Unicode qua CGEventKeyboardSetUnicodeString.
@@ -96,6 +98,7 @@ static void sendBackspaces(CGEventTapProxy proxy, size_t count) {
 static void sendUnicodeString(CGEventTapProxy proxy, NSString *str) {
     if (str.length == 0) return;
 
+    CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStateCombinedSessionState);
     NSUInteger total = str.length;  /* UTF-16 length */
     NSUInteger sent = 0;
     const NSUInteger kChunkSize = 20;
@@ -107,8 +110,8 @@ static void sendUnicodeString(CGEventTapProxy proxy, NSString *str) {
         unichar buf[20];
         [str getCharacters:buf range:NSMakeRange(sent, chunkLen)];
 
-        CGEventRef down = CGEventCreateKeyboardEvent(NULL, 0, true);
-        CGEventRef up   = CGEventCreateKeyboardEvent(NULL, 0, false);
+        CGEventRef down = CGEventCreateKeyboardEvent(source, 0, true);
+        CGEventRef up   = CGEventCreateKeyboardEvent(source, 0, false);
         CGEventKeyboardSetUnicodeString(down, (UniCharCount)chunkLen, buf);
         CGEventKeyboardSetUnicodeString(up,   (UniCharCount)chunkLen, buf);
         CGEventSetIntegerValueField(down, kCGEventSourceUserData, kVnKeyEventTag);
@@ -121,6 +124,7 @@ static void sendUnicodeString(CGEventTapProxy proxy, NSString *str) {
 
         sent += chunkLen;
     }
+    if (source) CFRelease(source);
 }
 
 /* ==================== Event Callback ==================== */
@@ -159,6 +163,14 @@ static CGEventRef eventCallback(CGEventTapProxy proxy,
 
     /* Bỏ qua phím có Command hoặc Control */
     if (flags & (kCGEventFlagMaskCommand | kCGEventFlagMaskControl)) {
+        vnkey_engine_reset(sEngine);
+        return event;
+    }
+
+    /* Option (Alt) modifier: reset engine và pass-through.
+     * Opt+Delete = word-delete trên macOS. Nếu không reset,
+     * engine state lệch vì macOS xóa cả từ nhưng engine chỉ biết xóa 1 ký tự. */
+    if (flags & kCGEventFlagMaskAlternate) {
         vnkey_engine_reset(sEngine);
         return event;
     }
@@ -266,7 +278,11 @@ static CGEventRef eventCallback(CGEventTapProxy proxy,
         outBuf, sizeof(outBuf), &actualLen, &backspaces, NULL);
 
     if (processed && (backspaces > 0 || actualLen > 0)) {
-        /* Engine đã xử lý: gửi backspace + text thay thế */
+        /* Engine đã xử lý: gửi backspace + text thay thế.
+         * Nuốt phím gốc trước (return NULL) để tránh race condition:
+         * nếu pass-through event gốc + gửi backspace, một số app (Zen, etc.)
+         * xử lý event gốc SAU backspace → ký tự thừa (vd: "dđ" thay vì "đ").
+         * Thay vào đó: nuốt phím gốc, gửi backspace xóa ký tự cũ, rồi gửi output. */
         sendBackspaces(proxy, backspaces);
         if (actualLen > 0) {
             NSString *output = [[NSString alloc]
