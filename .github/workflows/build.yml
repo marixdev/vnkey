@@ -541,3 +541,52 @@ jobs:
         with:
           files: release/*
           body_path: /tmp/release_body.md
+
+  # ===== Publish to AUR =====
+  aur-publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [release]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pkgname: fcitx5-vnkey-bin
+            artifact_prefix: vnkey-fcitx5
+          - pkgname: ibus-vnkey-bin
+            artifact_prefix: vnkey-ibus
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Extract pkgver and SHA256 from release
+        id: meta
+        run: |
+          PKGVER="${GITHUB_REF_NAME#v}"
+          ARTIFACT_FILE="${{ matrix.artifact_prefix }}-v${PKGVER}-1-x86_64.pkg.tar.zst"
+          SHA256=$(curl -fsSL \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/v${PKGVER}/SHA256SUMS.txt" \
+            | grep "${ARTIFACT_FILE}" | awk '{print $1}')
+          if [ -z "$SHA256" ]; then
+            echo "::error::Failed to extract SHA256 for ${ARTIFACT_FILE}"
+            exit 1
+          fi
+          echo "pkgver=$PKGVER" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+
+      - name: Patch PKGBUILD
+        run: |
+          cp .github/aur/${{ matrix.pkgname }}/PKGBUILD ./PKGBUILD
+          sed -i "s/PLACEHOLDER_VER/${{ steps.meta.outputs.pkgver }}/g" PKGBUILD
+          sed -i "s/PLACEHOLDER_SHA256/${{ steps.meta.outputs.sha256 }}/g" PKGBUILD
+          cat PKGBUILD
+
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.1
+        with:
+          pkgname: ${{ matrix.pkgname }}
+          pkgbuild: ./PKGBUILD
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to ${{ steps.meta.outputs.pkgver }}"
+          ssh_keyscan_types: rsa,ecdsa,ed25519
