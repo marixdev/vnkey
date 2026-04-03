@@ -13,6 +13,7 @@
 #import "vnkey-engine.h"
 #import <Carbon/Carbon.h>
 #import <ApplicationServices/ApplicationServices.h>
+#import <unistd.h>
 
 /* ==================== State ==================== */
 
@@ -77,6 +78,12 @@ static void loadPreferencesIntoEngine(void) {
 
 /* ==================== Text Output ==================== */
 
+/* Micro-delay (µs) giữa backspace và text output.
+ * Cần thiết cho Electron-based apps (Zen, VS Code, etc.) nơi backspace
+ * event chưa được xử lý xong trước khi text event đến → ký tự thừa.
+ * 1000µs (1ms) đủ nhỏ không gây lag, đủ lớn cho event loop xử lý. */
+static const useconds_t kBackspaceDelay = 1500;
+
 /* Gửi n backspace qua CGEvent */
 static void sendBackspaces(CGEventTapProxy proxy, size_t count) {
     CGEventSourceRef source = CGEventSourceCreate(kCGEventSourceStateCombinedSessionState);
@@ -91,6 +98,10 @@ static void sendBackspaces(CGEventTapProxy proxy, size_t count) {
         CFRelease(up);
     }
     if (source) CFRelease(source);
+    /* Delay sau backspace để app kịp xử lý trước khi text output đến */
+    if (count > 0) {
+        usleep(kBackspaceDelay);
+    }
 }
 
 /* Gửi chuỗi Unicode qua CGEventKeyboardSetUnicodeString.
@@ -167,15 +178,21 @@ static CGEventRef eventCallback(CGEventTapProxy proxy,
         return event;
     }
 
-    /* Option (Alt) modifier: reset engine và pass-through.
-     * Opt+Delete = word-delete trên macOS. Nếu không reset,
-     * engine state lệch vì macOS xóa cả từ nhưng engine chỉ biết xóa 1 ký tự. */
+    int64_t keyCode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
+
+    /* Option+Delete = word-delete trên macOS → reset engine vì
+     * macOS xóa cả từ nhưng engine chỉ biết xóa 1 ký tự.
+     * Option+Arrow = word-jump → cũng cần reset.
+     * CHỈ reset cho các combo cụ thể, KHÔNG reset cho mọi phím có Option
+     * vì user có thể chưa nhả Option sau Opt+Backspace → VNI keys bị reset. */
     if (flags & kCGEventFlagMaskAlternate) {
-        vnkey_engine_reset(sEngine);
+        if (keyCode == kVK_Delete || keyCode == kVK_ForwardDelete ||
+            keyCode == kVK_LeftArrow || keyCode == kVK_RightArrow ||
+            keyCode == kVK_UpArrow || keyCode == kVK_DownArrow) {
+            vnkey_engine_reset(sEngine);
+        }
         return event;
     }
-
-    int64_t keyCode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode);
 
     /* Reset engine khi gặp phím đặc biệt */
     if (keyCode == kVK_Escape || keyCode == kVK_Return ||
