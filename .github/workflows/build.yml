@@ -556,7 +556,7 @@ jobs:
           - pkgname: ibus-vnkey-bin
             artifact_prefix: vnkey-ibus
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Extract pkgver and SHA256 from release
         id: meta
