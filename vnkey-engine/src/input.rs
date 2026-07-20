@@ -15,7 +15,7 @@ pub enum InputMethod {
 }
 
 /// Loại sự kiện phím
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, num_enum::TryFromPrimitive)]
 #[repr(u8)]
 pub enum KeyEvType {
     RoofAll = 0,
@@ -43,12 +43,7 @@ pub enum KeyEvType {
 impl KeyEvType {
     /// An toàn: chuyển u8 sang KeyEvType, trả về Normal nếu ngoài phạm vi
     pub fn from_u8(v: u8) -> Self {
-        if v <= KeyEvType::Normal as u8 {
-            // SAFETY: repr(u8), các variant liên tục 0..=Normal, đã kiểm tra biên
-            unsafe { std::mem::transmute(v) }
-        } else {
-            KeyEvType::Normal
-        }
+        Self::try_from(v).unwrap_or(Self::Normal)
     }
 }
 
@@ -283,5 +278,17 @@ impl InputProcessor {
 impl Default for InputProcessor {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::KeyEvType;
+
+    #[test]
+    fn key_event_conversion_rejects_out_of_range_values() {
+        assert_eq!(KeyEvType::from_u8(KeyEvType::RoofAll as u8), KeyEvType::RoofAll);
+        assert_eq!(KeyEvType::from_u8(KeyEvType::Normal as u8), KeyEvType::Normal);
+        assert_eq!(KeyEvType::from_u8(u8::MAX), KeyEvType::Normal);
     }
 }

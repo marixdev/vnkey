@@ -3,7 +3,7 @@
 /// Tên ký tự tiếng Việt. Chẵn = hoa, lẻ = thường.
 /// Dấu: base, 1(sắc), 2(huyền), 3(hỏi), 4(ngã), 5(nặng)
 /// Hậu tố: r = mũ (â,ê,ô), b = trăng (ă), h = móc (ơ,ư)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, num_enum::TryFromPrimitive)]
 #[repr(i16)]
 #[allow(non_camel_case_types)]
 pub enum VnLexiName {
@@ -55,11 +55,9 @@ use VnLexiName::*;
 impl VnLexiName {
     /// An toàn: chuyển i16 sang VnLexiName, trả về NonVnChar nếu ngoài phạm vi
     pub fn from_i16(val: i16) -> Self {
-        if val >= VnLexiName::NonVnChar as i16 && val < VnLexiName::LastChar as i16 {
-            // SAFETY: repr(i16), variant liên tục -1..LastChar, đã kiểm tra biên
-            unsafe { std::mem::transmute(val) }
-        } else {
-            VnLexiName::NonVnChar
+        match Self::try_from(val) {
+            Ok(Self::LastChar) | Err(_) => Self::NonVnChar,
+            Ok(value) => value,
         }
     }
 
@@ -177,7 +175,7 @@ pub fn get_tone(sym: VnLexiName) -> i32 {
 
 // ============= Chuỗi nguyên âm =============
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, num_enum::TryFromPrimitive)]
 #[repr(i16)]
 #[allow(non_camel_case_types)]
 pub enum VowelSeq {
@@ -215,11 +213,7 @@ pub enum VowelSeq {
 
 impl VowelSeq {
     pub fn from_i16(val: i16) -> Self {
-        if val >= VowelSeq::Nil as i16 && val <= VowelSeq::VS_YERU as i16 {
-            unsafe { std::mem::transmute(val) }
-        } else {
-            VowelSeq::Nil
-        }
+        Self::try_from(val).unwrap_or(Self::Nil)
     }
 }
 
@@ -227,7 +221,7 @@ use VowelSeq::*;
 
 // ============= Chuỗi phụ âm =============
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, num_enum::TryFromPrimitive)]
 #[repr(i16)]
 #[allow(non_camel_case_types)]
 pub enum ConSeq {
@@ -245,11 +239,7 @@ pub enum ConSeq {
 
 impl ConSeq {
     pub fn from_i16(val: i16) -> Self {
-        if val >= ConSeq::Nil as i16 && val <= ConSeq::CS_X as i16 {
-            unsafe { std::mem::transmute(val) }
-        } else {
-            ConSeq::Nil
-        }
+        Self::try_from(val).unwrap_or(Self::Nil)
     }
 }
 
@@ -588,5 +578,21 @@ pub fn iso_to_vn_lexi(key_code: u32) -> VnLexiName {
         b'a'..=b'z' => AZ_LEXI_LOWER[(ch - b'a') as usize],
         b'A'..=b'Z' => AZ_LEXI_UPPER[(ch - b'A') as usize],
         _ => NonVnChar,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn primitive_conversions_reject_sentinels_and_out_of_range_values() {
+        assert_eq!(VnLexiName::from_i16(VnLexiName::A as i16), VnLexiName::A);
+        assert_eq!(VnLexiName::from_i16(VnLexiName::LastChar as i16), VnLexiName::NonVnChar);
+        assert_eq!(VnLexiName::from_i16(i16::MAX), VnLexiName::NonVnChar);
+        assert_eq!(VowelSeq::from_i16(VowelSeq::VS_YERU as i16), VowelSeq::VS_YERU);
+        assert_eq!(VowelSeq::from_i16(i16::MAX), VowelSeq::Nil);
+        assert_eq!(ConSeq::from_i16(ConSeq::CS_X as i16), ConSeq::CS_X);
+        assert_eq!(ConSeq::from_i16(i16::MAX), ConSeq::Nil);
     }
 }

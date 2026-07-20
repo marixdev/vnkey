@@ -8,7 +8,7 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::ptr;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use crate::engine::Engine;
 use crate::input::InputMethod;
@@ -16,32 +16,30 @@ use crate::charset::{self, Charset};
 
 static ENGINE: Mutex<Option<Engine>> = Mutex::new(None);
 
+fn lock_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 fn with_engine<F, R>(f: F) -> R
 where
     F: FnOnce(&mut Engine) -> R,
     R: Default,
 {
-    let mut guard = match ENGINE.lock() {
-        Ok(g) => g,
-        Err(_) => return R::default(),
-    };
-    if guard.is_none() {
-        *guard = Some(Engine::new());
-    }
-    f(guard.as_mut().unwrap())
+    let mut guard = lock_recover(&ENGINE);
+    f(guard.get_or_insert_with(Engine::new))
 }
 
 /// Khởi tạo engine. Gọi một lần khi khởi động.
 #[no_mangle]
 pub extern "C" fn vnkey_setup() {
-    let mut guard = ENGINE.lock().unwrap();
+    let mut guard = lock_recover(&ENGINE);
     *guard = Some(Engine::new());
 }
 
 /// Tắt engine và giải phóng tài nguyên.
 #[no_mangle]
 pub extern "C" fn vnkey_cleanup() {
-    let mut guard = ENGINE.lock().unwrap();
+    let mut guard = lock_recover(&ENGINE);
     *guard = None;
 }
 
@@ -638,4 +636,25 @@ pub unsafe extern "C" fn vnkey_app_charset_update(exe_name: *const c_char) {
 #[no_mangle]
 pub extern "C" fn vnkey_app_charset_get_current() -> i32 {
     crate::app_charset::get_current_app_charset().unwrap_or(-1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::lock_recover;
+    use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn poisoned_mutex_is_recovered_without_panicking() {
+        let mutex = Arc::new(Mutex::new(7));
+        let poison_target = Arc::clone(&mutex);
+
+        let _ = std::thread::spawn(move || {
+            let _guard = poison_target.lock().expect("test mutex should start healthy");
+            panic!("poison test mutex");
+        })
+        .join();
+
+        *lock_recover(&mutex) = 9;
+        assert_eq!(*lock_recover(&mutex), 9);
+    }
 }
