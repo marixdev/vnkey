@@ -476,4 +476,42 @@ mod tests {
         // "cow" → "cơ" (valid Vietnamese = rice/opportunity)
         assert_eq!(type_word(&mut engine, "cow"), "cơ");
     }
+
+    /// `[` và `]` gõ thành ơ/ư là chữ cái của từ, không phải dấu ngắt từ:
+    /// khôi phục từ phải giữ lại chúng và phần đứng trước.
+    #[test]
+    fn test_telex_auto_restore_keeps_bracket_letters() {
+        let mut engine = Engine::new();
+        engine.set_input_method(InputMethod::Telex);
+
+        assert_eq!(type_word(&mut engine, "x[0]"), "x[0]");
+        assert_eq!(type_word(&mut engine, "b[1]"), "b[1]");
+        assert_eq!(type_word(&mut engine, "x]1"), "x]1");
+        assert_eq!(type_word(&mut engine, "x[y"), "x[y");
+        assert_eq!(type_word(&mut engine, "t[a"), "t[a");
+        assert_eq!(type_word(&mut engine, "x[a]"), "x[a]");
+        assert_eq!(type_word(&mut engine, "a-x[0]"), "a-x[0]");
+
+        // Vẫn gõ được ơ/ư và dấu ngắt từ như cũ
+        assert_eq!(type_word(&mut engine, "t["), "tơ");
+        assert_eq!(type_word(&mut engine, "t]"), "tư");
+        assert_eq!(type_word(&mut engine, "t[s"), "tớ");
+        assert_eq!(type_word(&mut engine, "to[2"), "to[2");
+    }
+
+    /// Dấu VIQR cũng là ký tự ngắt từ, nên gặp lỗi tương tự `[` trong Telex.
+    #[test]
+    fn test_viqr_auto_restore_keeps_mark_keys() {
+        let mut engine = Engine::new();
+        engine.set_input_method(InputMethod::Viqr);
+
+        assert_eq!(type_word(&mut engine, "a'x"), "a'x");
+        assert_eq!(type_word(&mut engine, "ta'x"), "ta'x");
+        assert_eq!(type_word(&mut engine, "a(x"), "a(x");
+        assert_eq!(type_word(&mut engine, "to+0"), "to+0");
+
+        // Vẫn gõ dấu như cũ
+        assert_eq!(type_word(&mut engine, "ta'"), "tá");
+        assert_eq!(type_word(&mut engine, "to+i"), "tơi");
+    }
 }
