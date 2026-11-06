@@ -326,6 +326,13 @@ impl Engine {
                 ev: {
                     let mut e = ev;
                     e.ch_type = self.input.get_char_type(e.key_code);
+                    // Phím như `[` (Telex) hay `'` (VIQR) đã được dùng làm chữ/dấu
+                    // thì không phải dấu ngắt từ, dù thuộc nhóm WordBreak
+                    if e.ch_type == CharType::WordBreak
+                        && self.buf(self.current).form != WordForm::Empty
+                    {
+                        e.ch_type = CharType::Vn;
+                    }
                     e
                 },
                 _converted: ret,
